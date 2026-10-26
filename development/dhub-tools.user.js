@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dhub tools (dev)
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.6
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/dhub-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/dhub-tools.user.js
 // @description  Add DealerSocket search and copy buttons beside phone numbers and make tel clickable
@@ -13,15 +13,7 @@
     'use strict';
 
     const phoneRegex =
-        /(^|[^\d])(\+\d{1,3}[ .-]?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}|(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)/g;
-    const blockTags = new Set([
-        'ADDRESS', 'ARTICLE', 'ASIDE', 'BLOCKQUOTE', 'DD', 'DIV', 'DL',
-        'DT', 'FIELDSET', 'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM',
-        'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'HEADER', 'LI', 'MAIN',
-        'OL', 'P', 'SECTION', 'TABLE', 'TBODY', 'TD', 'TFOOT', 'TH',
-        'THEAD', 'TR', 'UL'
-    ]);
-    const excludedTextSelector = 'a, button, script, style, textarea, input, select, option';
+        /(^|[^\d])(\+\d{1,3}[ .-]?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}|(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)/;
     const searchColor = '#287397';
     const copyColor = '#2f8f5b';
 
@@ -70,101 +62,51 @@
         return button;
     }
 
-    function getBlockContainer(element) {
-        while (element && element !== document.body && !blockTags.has(element.tagName)) {
-            element = element.parentElement;
-        }
-        return element || document.body;
-    }
+    function linkPhoneText(textNode) {
+        const parent = textNode.parentElement;
+        if (!parent || parent.closest('a, button, script, style, textarea')) return;
 
-    function linkPhoneGroup(textNodes) {
-        const text = textNodes.map(node => node.nodeValue || '').join('');
-        const matches = Array.from(text.matchAll(phoneRegex));
-        if (!matches.length) return;
+        const text = textNode.nodeValue || '';
+        const match = text.match(phoneRegex);
+        if (!match) return;
 
-        const positions = [];
-        let offset = 0;
-        for (const node of textNodes) {
-            const end = offset + (node.nodeValue || '').length;
-            positions.push({ node, start: offset, end });
-            offset = end;
-        }
+        const phone = match[2];
+        const start = match.index + match[1].length;
+        const end = start + phone.length;
+        const digits = phone.replace(/\D/g, '');
+        const fragment = document.createDocumentFragment();
 
-        function findPosition(target, isEnd) {
-            for (const position of positions) {
-                if (isEnd ? target <= position.end : target < position.end) {
-                    return {
-                        node: position.node,
-                        offset: target - position.start
-                    };
-                }
-            }
-            const last = positions[positions.length - 1];
-            return { node: last.node, offset: last.end - last.start };
-        }
+        if (start > 0) fragment.appendChild(document.createTextNode(text.slice(0, start)));
 
-        for (const match of matches.reverse()) {
-            const phone = match[2];
-            const start = match.index + match[1].length;
-            const end = start + phone.length;
-            const rangeStart = findPosition(start, false);
-            const rangeEnd = findPosition(end, true);
-            const range = document.createRange();
-            range.setStart(rangeStart.node, rangeStart.offset);
-            range.setEnd(rangeEnd.node, rangeEnd.offset);
+        const callLink = document.createElement('a');
+        callLink.href = `tel:${phone.startsWith('+') ? '+' : ''}${digits}`;
+        callLink.title = `Call ${phone}`;
+        callLink.setAttribute('aria-label', `Call ${phone}`);
+        callLink.textContent = phone;
+        fragment.appendChild(callLink);
+        fragment.appendChild(createSearchLink(phone));
+        fragment.appendChild(createCopyButton(phone));
 
-            const callLink = document.createElement('a');
-            const digits = phone.replace(/\D/g, '');
-            callLink.href = `tel:${phone.startsWith('+') ? '+' : ''}${digits}`;
-            callLink.title = `Call ${phone}`;
-            callLink.setAttribute('aria-label', `Call ${phone}`);
-            callLink.appendChild(range.extractContents());
-
-            const fragment = document.createDocumentFragment();
-            fragment.appendChild(callLink);
-            fragment.appendChild(createSearchLink(phone));
-            fragment.appendChild(createCopyButton(phone));
-            range.insertNode(fragment);
-        }
+        if (end < text.length) fragment.appendChild(document.createTextNode(text.slice(end)));
+        textNode.replaceWith(fragment);
     }
 
     function processNode(node) {
-        if (node.nodeType !== Node.TEXT_NODE &&
-            node.nodeType !== Node.ELEMENT_NODE &&
+        if (node.nodeType === Node.TEXT_NODE) {
+            linkPhoneText(node);
+            return;
+        }
+
+        if (node.nodeType !== Node.ELEMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_NODE) return;
 
-        const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
-        if (!element) return;
-
-        const root = node.nodeType === Node.DOCUMENT_NODE
-            ? document.body
-            : getBlockContainer(element);
-        if (!root) return;
-
-        const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-        let group = [];
-        let groupContainer = null;
-
-        function flushGroup() {
-            if (group.length) linkPhoneGroup(group);
-            group = [];
-            groupContainer = null;
-        }
-
+        const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
+        const textNodes = [];
         let textNode;
         while ((textNode = walker.nextNode())) {
-            const parent = textNode.parentElement;
-            if (!parent || parent.closest(excludedTextSelector)) {
-                flushGroup();
-                continue;
-            }
-
-            const container = getBlockContainer(parent);
-            if (group.length && container !== groupContainer) flushGroup();
-            if (!group.length) groupContainer = container;
-            group.push(textNode);
+            textNodes.push(textNode);
         }
-        flushGroup();
+        for (const candidate of textNodes) linkPhoneText(candidate);
     }
 
     function startObserving() {
