@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.7
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js
 // @description  Add DealerSocket search and copy buttons beside phone numbers and make tel clickable
@@ -12,7 +12,8 @@
 (function() {
     'use strict';
 
-    const phoneRegex = /(\(?\d{3}\)?[-.\s]?\d{3}[-.\s]?\d{4})/;
+    const phoneRegex =
+        /(^|[^\d])(\+\d{1,3}[ .-]?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}|(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)/;
     const searchColor = '#287397';
     const copyColor = '#2f8f5b';
 
@@ -69,8 +70,8 @@
         const match = text.match(phoneRegex);
         if (!match) return;
 
-        const phone = match[0];
-        const start = match.index;
+        const phone = match[2];
+        const start = match.index + match[1].length;
         const end = start + phone.length;
         const digits = phone.replace(/\D/g, '');
         const fragment = document.createDocumentFragment();
@@ -78,7 +79,7 @@
         if (start > 0) fragment.appendChild(document.createTextNode(text.slice(0, start)));
 
         const callLink = document.createElement('a');
-        callLink.href = `tel:${digits}`;
+        callLink.href = `tel:${phone.startsWith('+') ? '+' : ''}${digits}`;
         callLink.title = `Call ${phone}`;
         callLink.setAttribute('aria-label', `Call ${phone}`);
         callLink.textContent = phone;
