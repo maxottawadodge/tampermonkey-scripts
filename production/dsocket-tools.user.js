@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      2.5
+// @version      2.6
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -120,6 +120,7 @@
             'display:inline-block;margin-left:4px;padding:1px 3px;' +
             'background:#c64545;color:#fff;border-radius:3px;' +
             'font-size:9px;line-height:1.2;text-decoration:none;vertical-align:middle;';
+        link.addEventListener('click', event => event.stopPropagation());
         return link;
     }
 
