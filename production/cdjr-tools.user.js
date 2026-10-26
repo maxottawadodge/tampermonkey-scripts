@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.0
+// @version      5.1
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js
 // @description  Inventory search, VIN decode, window sticker, and copy tools
