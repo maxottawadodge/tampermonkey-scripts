@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      2.3
+// @version      2.4
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -60,6 +60,19 @@
     const ignoredPhoneElements =
         'a, button, input, select, textarea, script, style, noscript, option, iframe, ' +
         '[contenteditable]:not([contenteditable="false"]), [role="textbox"]';
+    const phoneBlockTags = new Set([
+        'ADDRESS', 'ARTICLE', 'BLOCKQUOTE', 'DD', 'DIV', 'DL', 'DT', 'FIELDSET',
+        'FIGCAPTION', 'FIGURE', 'FOOTER', 'FORM', 'H1', 'H2', 'H3', 'H4', 'H5',
+        'H6', 'HEADER', 'LI', 'MAIN', 'P', 'SECTION', 'TD', 'TH', 'TR'
+    ]);
+
+    function getPhoneBlock(element) {
+        while (element && element !== element.ownerDocument.body &&
+            !phoneBlockTags.has(element.tagName)) {
+            element = element.parentElement;
+        }
+        return element || document.body;
+    }
 
     function createPhoneLink(doc, phone) {
         const link = doc.createElement('a');
@@ -89,11 +102,16 @@
         return link;
     }
 
-    function addPhoneLinks(textNode) {
-        const parent = textNode.parentElement;
-        const text = textNode.nodeValue;
-        if (!parent || parent.closest(ignoredPhoneElements) || !text ||
-            !/\d{3}/.test(text)) return;
+    function addPhoneLinks(textNodes) {
+        if (textNodes.length === 0) return;
+        const positions = [];
+        let text = '';
+        for (const node of textNodes) {
+            const start = text.length;
+            text += node.nodeValue || '';
+            positions.push({ node, start, end: text.length });
+        }
+        if (!/\d{3}/.test(text)) return;
 
         phonePattern.lastIndex = 0;
         let match;
@@ -104,50 +122,70 @@
             if (digits.length < 7 || digits.length > 15) continue;
 
             const end = match.index + match[1].length + phone.length;
-            const next = textNode.nextSibling;
-            if (end === text.length &&
-                next?.nodeType === Node.ELEMENT_NODE &&
-                next.dataset.dealerSocketPhoneLink === 'true') {
-                continue;
-            }
             matches.push({ phone, end });
         }
 
         for (let i = matches.length - 1; i >= 0; i--) {
             const { phone, end } = matches[i];
-            const range = textNode.ownerDocument.createRange();
-            range.setStart(textNode, end);
+            const position = positions.find(item => end <= item.end && end > item.start);
+            if (!position) continue;
+            const offset = end - position.start;
+            const next = position.node.nextSibling;
+            if (offset === (position.node.nodeValue || '').length &&
+                next?.nodeType === Node.ELEMENT_NODE &&
+                next.dataset.dealerSocketPhoneLink === 'true') continue;
+
+            const range = position.node.ownerDocument.createRange();
+            range.setStart(position.node, offset);
             range.collapse(true);
-            range.insertNode(createPhoneLink(textNode.ownerDocument, phone));
+            range.insertNode(createPhoneLink(position.node.ownerDocument, phone));
         }
     }
 
     function processPhoneNode(node) {
-        if (node.nodeType === Node.TEXT_NODE) {
-            addPhoneLinks(node);
-            return;
-        }
-        if (node.nodeType !== Node.ELEMENT_NODE &&
+        if (node.nodeType !== Node.TEXT_NODE &&
+            node.nodeType !== Node.ELEMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
         if (node.nodeType === Node.ELEMENT_NODE &&
             node.closest(ignoredPhoneElements)) return;
 
-        const doc = node.nodeType === Node.DOCUMENT_NODE
-            ? node
-            : node.ownerDocument;
-        const walker = doc.createTreeWalker(node, NodeFilter.SHOW_TEXT, {
-            acceptNode(textNode) {
-                const parent = textNode.parentElement;
-                return parent && !parent.closest(ignoredPhoneElements)
-                    ? NodeFilter.FILTER_ACCEPT
-                    : NodeFilter.FILTER_REJECT;
+        const doc = node.nodeType === Node.DOCUMENT_NODE ? node : node.ownerDocument;
+        const blocks = new Set();
+        if (node.nodeType === Node.TEXT_NODE) {
+            if (node.parentElement && !node.parentElement.closest(ignoredPhoneElements)) {
+                blocks.add(getPhoneBlock(node.parentElement));
             }
-        });
-        const textNodes = [];
-        let textNode;
-        while ((textNode = walker.nextNode())) textNodes.push(textNode);
-        for (const candidate of textNodes) addPhoneLinks(candidate);
+        } else {
+            const walker = doc.createTreeWalker(node, NodeFilter.SHOW_TEXT, {
+                acceptNode(textNode) {
+                    const parent = textNode.parentElement;
+                    return parent && !parent.closest(ignoredPhoneElements)
+                        ? NodeFilter.FILTER_ACCEPT
+                        : NodeFilter.FILTER_REJECT;
+                }
+            });
+            let textNode;
+            while ((textNode = walker.nextNode())) {
+                blocks.add(getPhoneBlock(textNode.parentElement));
+            }
+        }
+
+        for (const block of blocks) {
+            const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+                acceptNode(textNode) {
+                    const parent = textNode.parentElement;
+                    return parent && !parent.closest(ignoredPhoneElements) &&
+                        getPhoneBlock(parent) === block
+                        ? NodeFilter.FILTER_ACCEPT
+                        : NodeFilter.FILTER_REJECT;
+                }
+            });
+            const textNodes = [];
+            let textNode;
+            while ((textNode = walker.nextNode())) textNodes.push(textNode);
+            addPhoneLinks(textNodes);
+        }
     }
 
     function observePhoneDocument(doc) {
