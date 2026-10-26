@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      2.6
+// @version      2.7
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -107,19 +107,53 @@
         return link;
     }
 
-    function createWindowStickerLink(doc, vin) {
+    function createVinLink(doc, vin, { sticker = false } = {}) {
         const link = doc.createElement('a');
-        link.href =
-            `https://www.chrysler.com/hostd/windowsticker/getWindowStickerPdf.do?vin=${vin}`;
+        if (sticker) {
+            link.href =
+                `https://www.chrysler.com/hostd/windowsticker/getWindowStickerPdf.do?vin=${vin}`;
+            link.textContent = 'Sticker';
+            link.title = `Open window sticker for ${vin}`;
+            link.dataset.dealerSocketVinLink = 'true';
+        } else {
+            const filter = [{
+                tsearch: [{
+                    n: 'fieldsearch',
+                    v: vin.toLowerCase(),
+                    s: 1
+                }]
+            }];
+            const encoded = doc.defaultView.btoa(JSON.stringify(filter));
+            link.href =
+                'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
+                'a9b123q0-10x0-0-0+' + encoded;
+            link.setAttribute('aria-label', `Search inventory for VIN ${vin}`);
+            link.title = `Search inventory for VIN ${vin}`;
+            link.dataset.dealerSocketVinSearch = 'true';
+
+            const icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            icon.setAttribute('viewBox', '0 0 24 24');
+            icon.setAttribute('width', '12');
+            icon.setAttribute('height', '12');
+            icon.setAttribute('fill', 'none');
+            icon.setAttribute('stroke', 'currentColor');
+            icon.setAttribute('stroke-width', '2');
+            icon.setAttribute('aria-hidden', 'true');
+            const globe = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+            globe.setAttribute(
+                'd',
+                'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20zm0 0c2.5-2.7 3.5-5.9 3.5-10S14.5 4.7 12 2m0 20c-2.5-2.7-3.5-5.9-3.5-10S9.5 4.7 12 2M2 12h20M4.9 5.5h14.2M4.9 18.5h14.2'
+            );
+            icon.appendChild(globe);
+            link.appendChild(icon);
+        }
         link.target = '_blank';
         link.rel = 'noopener noreferrer';
-        link.textContent = 'Sticker';
-        link.title = `Open window sticker for ${vin}`;
-        link.dataset.dealerSocketVinLink = 'true';
         link.style.cssText =
             'display:inline-block;margin-left:4px;padding:1px 3px;' +
-            'background:#c64545;color:#fff;border-radius:3px;' +
-            'font-size:9px;line-height:1.2;text-decoration:none;vertical-align:middle;';
+            `background:${sticker ? '#c64545' : '#2d6cdf'};color:#fff;` +
+            'border-radius:3px;font-size:9px;line-height:1.2;' +
+            'text-decoration:none;vertical-align:middle;';
         link.addEventListener('click', event => event.stopPropagation());
         return link;
     }
@@ -138,12 +172,15 @@
         const matches = [];
         while ((match = vinPattern.exec(text)) !== null) {
             const vin = match[0];
-            if (!cdjrWmis.has(vin.substring(0, 3).toUpperCase())) continue;
-            matches.push({ vin, end: match.index + vin.length });
+            matches.push({
+                vin,
+                end: match.index + vin.length,
+                isCDJR: cdjrWmis.has(vin.substring(0, 3).toUpperCase())
+            });
         }
 
         for (let i = matches.length - 1; i >= 0; i--) {
-            const { vin, end } = matches[i];
+            const { vin, end, isCDJR } = matches[i];
             const position = positions.find(item => end <= item.end && end > item.start);
             if (!position) continue;
 
@@ -151,12 +188,20 @@
             const next = position.node.nextSibling;
             if (offset === (position.node.nodeValue || '').length &&
                 next?.nodeType === Node.ELEMENT_NODE &&
-                next.dataset.dealerSocketVinLink === 'true') continue;
+                (next.dataset.dealerSocketVinLink === 'true' ||
+                    next.dataset.dealerSocketVinSearch === 'true')) continue;
 
             const range = position.node.ownerDocument.createRange();
             range.setStart(position.node, offset);
             range.collapse(true);
-            range.insertNode(createWindowStickerLink(position.node.ownerDocument, vin));
+            const doc = position.node.ownerDocument;
+            if (isCDJR) {
+                const stickerLink = createVinLink(doc, vin, { sticker: true });
+                range.insertNode(stickerLink);
+                range.setStartAfter(stickerLink);
+                range.collapse(true);
+            }
+            range.insertNode(createVinLink(doc, vin));
         }
     }
 
