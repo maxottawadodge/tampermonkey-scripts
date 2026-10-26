@@ -24,7 +24,7 @@ In Tampermonkey, disable the currently enabled set, then install the scripts fro
 
 ## Workflow
 
-1. Make and test changes in development/. Edit on GitHub or use GitHub Desktop to edit and commit the files locally.
+1. Make and test changes in development/. Edit on GitHub or use GitHub Desktop to edit and commit the files locally. Increment that script's @version before committing so Tampermonkey recognizes the update.
 2. Commit development changes to GitHub.
 3. Update the development Tampermonkey entry with its Check for updates action, or wait for its scheduled update check.
 4. When ready, copy the approved code into the matching production/ script. Keep its @name and update URL unchanged, and increment @version.
