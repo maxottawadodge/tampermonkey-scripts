@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.7
+// @version      1.8
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js
 // @description  Add DealerSocket search and copy buttons beside phone numbers and make tel clickable
