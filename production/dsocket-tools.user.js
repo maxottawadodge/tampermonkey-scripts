@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      2.4
+// @version      2.5
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -57,6 +57,11 @@
     const observedFrames = new WeakSet();
     const phonePattern =
         /(^|[^\d])(\+?(?:\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]?\d{3}[ .-]?\d{4}|\d{3}[.-]\d{4})(?!\d)/g;
+    const vinPattern = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
+    const cdjrWmis = new Set([
+        '1C3', '1C4', '1C6', '2C3', '2C4', '2C7', '3C3', '3C4', '3C6',
+        'ZAC', 'ZFA'
+    ]);
     const ignoredPhoneElements =
         'a, button, input, select, textarea, script, style, noscript, option, iframe, ' +
         '[contenteditable]:not([contenteditable="false"]), [role="textbox"]';
@@ -102,6 +107,58 @@
         return link;
     }
 
+    function createWindowStickerLink(doc, vin) {
+        const link = doc.createElement('a');
+        link.href =
+            `https://www.chrysler.com/hostd/windowsticker/getWindowStickerPdf.do?vin=${vin}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.textContent = 'Sticker';
+        link.title = `Open window sticker for ${vin}`;
+        link.dataset.dealerSocketVinLink = 'true';
+        link.style.cssText =
+            'display:inline-block;margin-left:4px;padding:1px 3px;' +
+            'background:#c64545;color:#fff;border-radius:3px;' +
+            'font-size:9px;line-height:1.2;text-decoration:none;vertical-align:middle;';
+        return link;
+    }
+
+    function addVinLinks(textNodes) {
+        const positions = [];
+        let text = '';
+        for (const node of textNodes) {
+            const start = text.length;
+            text += node.nodeValue || '';
+            positions.push({ node, start, end: text.length });
+        }
+
+        vinPattern.lastIndex = 0;
+        let match;
+        const matches = [];
+        while ((match = vinPattern.exec(text)) !== null) {
+            const vin = match[0];
+            if (!cdjrWmis.has(vin.substring(0, 3).toUpperCase())) continue;
+            matches.push({ vin, end: match.index + vin.length });
+        }
+
+        for (let i = matches.length - 1; i >= 0; i--) {
+            const { vin, end } = matches[i];
+            const position = positions.find(item => end <= item.end && end > item.start);
+            if (!position) continue;
+
+            const offset = end - position.start;
+            const next = position.node.nextSibling;
+            if (offset === (position.node.nodeValue || '').length &&
+                next?.nodeType === Node.ELEMENT_NODE &&
+                next.dataset.dealerSocketVinLink === 'true') continue;
+
+            const range = position.node.ownerDocument.createRange();
+            range.setStart(position.node, offset);
+            range.collapse(true);
+            range.insertNode(createWindowStickerLink(position.node.ownerDocument, vin));
+        }
+    }
+
     function addPhoneLinks(textNodes) {
         if (textNodes.length === 0) return;
         const positions = [];
@@ -142,6 +199,22 @@
         }
     }
 
+    function getBlockTextNodes(block) {
+        const walker = block.ownerDocument.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
+            acceptNode(textNode) {
+                const parent = textNode.parentElement;
+                return parent && !parent.closest(ignoredPhoneElements) &&
+                    getPhoneBlock(parent) === block
+                    ? NodeFilter.FILTER_ACCEPT
+                    : NodeFilter.FILTER_REJECT;
+            }
+        });
+        const textNodes = [];
+        let textNode;
+        while ((textNode = walker.nextNode())) textNodes.push(textNode);
+        return textNodes;
+    }
+
     function processPhoneNode(node) {
         if (node.nodeType !== Node.TEXT_NODE &&
             node.nodeType !== Node.ELEMENT_NODE &&
@@ -172,19 +245,9 @@
         }
 
         for (const block of blocks) {
-            const walker = doc.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
-                acceptNode(textNode) {
-                    const parent = textNode.parentElement;
-                    return parent && !parent.closest(ignoredPhoneElements) &&
-                        getPhoneBlock(parent) === block
-                        ? NodeFilter.FILTER_ACCEPT
-                        : NodeFilter.FILTER_REJECT;
-                }
-            });
-            const textNodes = [];
-            let textNode;
-            while ((textNode = walker.nextNode())) textNodes.push(textNode);
+            const textNodes = getBlockTextNodes(block);
             addPhoneLinks(textNodes);
+            addVinLinks(getBlockTextNodes(block));
         }
     }
 
