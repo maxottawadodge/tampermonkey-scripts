@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.0
+// @version      3.1
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -168,8 +168,7 @@
         if (!control) return;
 
         if (control.dataset.dealerSocketVinCopy === 'true' ||
-            control.dataset.dealerSocketPhoneCopy === 'true' ||
-            control.dataset.dealerSocketNameCopy === 'true') {
+            control.dataset.dealerSocketPhoneCopy === 'true') {
             event.preventDefault();
             event.stopImmediatePropagation();
             try {
@@ -197,8 +196,7 @@
 
         if (control.dataset.dealerSocketVinLink === 'true' ||
             control.dataset.dealerSocketVinSearch === 'true' ||
-            control.dataset.dealerSocketPhoneLink === 'true' ||
-            control.dataset.dealerSocketMapsLink === 'true') {
+            control.dataset.dealerSocketPhoneLink === 'true') {
             event.stopImmediatePropagation();
         }
     }
@@ -210,9 +208,7 @@
             'dealerSocketVinSearch',
             'dealerSocketVinCopy',
             'dealerSocketPhoneLink',
-            'dealerSocketPhoneCopy',
-            'dealerSocketNameCopy',
-            'dealerSocketMapsLink'
+            'dealerSocketPhoneCopy'
         ];
         let next = node.nextSibling;
         while (next) {
@@ -277,102 +273,6 @@
             'text-decoration:none;vertical-align:middle;';
         link.addEventListener('click', event => event.stopPropagation());
         return link;
-    }
-
-    function isProfileName(text) {
-        const words = text.trim().split(/\s+/);
-        if (words.length < 2 || words.length > 4 ||
-            !/^\p{Lu}[\p{L}'’.-]*(?:\s+\p{Lu}[\p{L}'’.-]*){1,3}$/u.test(text)) {
-            return false;
-        }
-        return !/\b(?:ottawa|dodge|chrysler|jeep|dealer|motors|automotive)\b/i.test(text);
-    }
-
-    function isStreetAddress(text) {
-        return /^\d{1,6}\s+.+\b(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|lane|ln|court|ct|crescent|cres|highway|hwy|terrace|ter|trail|trl|way)\b/i.test(text) ||
-            /^P\.?\s*O\.?\s+Box\s+\d+/i.test(text);
-    }
-
-    function createMapsLink(doc, address) {
-        const link = doc.createElement('a');
-        link.href = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
-        link.target = '_blank';
-        link.rel = 'noopener noreferrer';
-        link.title = `Search Google Maps for ${address}`;
-        link.setAttribute('aria-label', 'Open address in Google Maps');
-        link.dataset.dealerSocketMapsLink = 'true';
-        link.style.cssText =
-            'display:inline-flex;align-items:center;margin-left:3px;padding:1px 2px;' +
-            'color:#2d6cdf;vertical-align:middle;text-decoration:none;line-height:1;';
-
-        const icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
-        icon.setAttribute('viewBox', '0 0 24 24');
-        icon.setAttribute('width', '13');
-        icon.setAttribute('height', '13');
-        icon.setAttribute('fill', 'currentColor');
-        icon.setAttribute('aria-hidden', 'true');
-        const pin = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
-        pin.setAttribute(
-            'd',
-            'M12 22s8-7.2 8-13a8 8 0 1 0-16 0c0 5.8 8 13 8 13zm0-10a3 3 0 1 1 0-6 3 3 0 0 1 0 6z'
-        );
-        icon.appendChild(pin);
-        link.appendChild(icon);
-        return link;
-    }
-
-    function addProfileLinks(block, textNodes) {
-        const processedNames = new Set();
-        const processedAddresses = new Set();
-
-        for (const textNode of textNodes) {
-            let element = textNode.parentElement;
-            while (element) {
-                const text = element.textContent.trim();
-                if (!processedNames.has(element) && isProfileName(text)) {
-                    processedNames.add(element);
-                    const lastTextNode = getBlockTextNodes(element).pop();
-                    if (lastTextNode) {
-                        const controls = getFollowingControls(lastTextNode);
-                        if (!controls.some(control =>
-                            control.dataset.dealerSocketNameCopy === 'true')) {
-                            const range = lastTextNode.ownerDocument.createRange();
-                            range.setStart(lastTextNode, lastTextNode.length);
-                            range.collapse(true);
-                            range.insertNode(createCopyButton(
-                                lastTextNode.ownerDocument,
-                                text,
-                                'name',
-                                'dealerSocketNameCopy'
-                            ));
-                        }
-                    }
-                    break;
-                }
-
-                if (!processedAddresses.has(element) && isStreetAddress(text)) {
-                    processedAddresses.add(element);
-                    const lastTextNode = getBlockTextNodes(element).pop();
-                    if (lastTextNode) {
-                        const controls = getFollowingControls(lastTextNode);
-                        if (!controls.some(control =>
-                            control.dataset.dealerSocketMapsLink === 'true')) {
-                            const range = lastTextNode.ownerDocument.createRange();
-                            range.setStart(lastTextNode, lastTextNode.length);
-                            range.collapse(true);
-                            range.insertNode(createMapsLink(
-                                lastTextNode.ownerDocument,
-                                text
-                            ));
-                        }
-                    }
-                    break;
-                }
-
-                if (element === block) break;
-                element = element.parentElement;
-            }
-        }
     }
 
     function addVinLinks(textNodes) {
@@ -535,7 +435,6 @@
             const textNodes = getBlockTextNodes(block);
             addPhoneLinks(textNodes);
             addVinLinks(getBlockTextNodes(block));
-            addProfileLinks(block, getBlockTextNodes(block));
         }
     }
 
