@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      2.8
+// @version      2.9
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -132,28 +132,73 @@
         outline.setAttribute('d', 'M8 8V4h12v12h-4M4 8h12v12H4z');
         icon.appendChild(outline);
         button.appendChild(icon);
+        button.dataset.copyValue = value;
+        button.dataset.copyLabel = label;
+        return button;
+    }
 
-        button.addEventListener('click', async event => {
-            event.preventDefault();
-            event.stopPropagation();
+    async function copyText(doc, value) {
+        const clipboard = doc.defaultView?.navigator.clipboard;
+        if (clipboard?.writeText) {
             try {
-                const clipboard = doc.defaultView?.navigator.clipboard;
-                if (!clipboard?.writeText) throw new Error('Clipboard API is unavailable');
                 await clipboard.writeText(value);
-                button.textContent = '✓';
-                button.title = `Copied ${label}`;
+                return;
+            } catch (error) {
+                console.debug('DealerSocket: Clipboard API unavailable; using copy fallback', error);
+            }
+        }
+
+        const textarea = doc.createElement('textarea');
+        textarea.value = value;
+        textarea.setAttribute('readonly', '');
+        textarea.style.cssText = 'position:fixed;left:-9999px;top:0;opacity:0;';
+        doc.body.appendChild(textarea);
+        let copied;
+        try {
+            textarea.select();
+            copied = doc.execCommand('copy');
+        } finally {
+            textarea.remove();
+        }
+        if (!copied) throw new Error('Browser copy command failed');
+    }
+
+    async function handleInjectedControlClick(event, doc) {
+        const control = event.target?.closest?.('a, button');
+        if (!control) return;
+
+        if (control.dataset.dealerSocketVinCopy === 'true' ||
+            control.dataset.dealerSocketPhoneCopy === 'true') {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            try {
+                await copyText(doc, control.dataset.copyValue);
+                const icon = control.querySelector('svg');
+                control.textContent = '✓';
+                control.title = `Copied ${control.dataset.copyLabel}`;
                 setTimeout(() => {
-                    if (button.isConnected) {
-                        button.replaceChildren(icon);
-                        button.title = `Copy ${label}`;
+                    if (control.isConnected && icon) {
+                        control.replaceChildren(icon);
+                        control.title = `Copy ${control.dataset.copyLabel}`;
                     }
                 }, 1000);
             } catch (error) {
-                console.error(`DealerSocket: could not copy ${label}`, error);
-                doc.defaultView?.alert(`Could not copy ${label}. Check clipboard permissions.`);
+                console.error(
+                    `DealerSocket: could not copy ${control.dataset.copyLabel}`,
+                    error
+                );
+                doc.defaultView?.alert(
+                    `Could not copy ${control.dataset.copyLabel}.`
+                );
             }
-        });
-        return button;
+            return;
+        }
+
+        if (control.dataset.dealerSocketVinLink === 'true' ||
+            control.dataset.dealerSocketVinSearch === 'true' ||
+            control.dataset.dealerSocketPhoneLink === 'true') {
+            event.stopImmediatePropagation();
+        }
     }
 
     function getFollowingControls(node) {
@@ -396,6 +441,9 @@
     function observePhoneDocument(doc) {
         if (observedDocuments.has(doc) || !doc.body) return;
         observedDocuments.add(doc);
+        doc.addEventListener('click', event => {
+            handleInjectedControlClick(event, doc);
+        }, true);
         processPhoneNode(doc.body);
 
         const Observer = doc.defaultView?.MutationObserver || MutationObserver;
