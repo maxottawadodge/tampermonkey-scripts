@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.5
+// @version      3.6
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -460,25 +460,42 @@
 
     function getValidAddress(text) {
         const address = text
-            .replace(/(?:<\s*)?-?\s*invalid\s+(?:address|city|zip|postal(?:\s+code)?)\s*-?(?:>)?/gi, ' ')
+            .replace(/<?\s*-*\s*invalid\s+(?:address|city|zip|postal(?:\s+code)?)\s*-*\s*>?/gi, ' ')
             .replace(/[<>]+/g, ' ')
+            .replace(/\s+,/g, ',')
+            .replace(/,\s*,+/g, ', ')
             .replace(/\s+/g, ' ')
+            .replace(/^[,\s]+|[,\s]+$/g, '')
             .trim();
         const streetAddress =
             /^\d{1,6}\s+(?:[\p{L}\d.'’-]+\s+){1,8}(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|lane|ln|court|ct|crescent|cres|highway|hwy|terrace|ter|trail|trl|way)\b/iu;
         const poBox = /^P\.?\s*O\.?\s+Box\s+\d+\b/i;
-        return streetAddress.test(address) || poBox.test(address) ? address : '';
+        const postalCode =
+            /\b(?:[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\s*\d[ABCEGHJ-NPRSTV-Z]\d|\d{5}(?:-\d{4})?)\b/iu;
+        return streetAddress.test(address) || poBox.test(address) ||
+            postalCode.test(address) ? address : '';
     }
 
-    function addAddressMapButton(textNode) {
-        const address = getValidAddress(textNode.nodeValue || '');
-        const controls = getFollowingControls(textNode);
-        const existing = controls.find(control =>
-            control.dataset.dealerSocketMapsLink === 'true');
+    function addAddressMapButton(textNodes) {
+        if (textNodes.length === 0) return;
+        const address = getValidAddress(textNodes
+            .map(textNode => textNode.nodeValue || '')
+            .join(' '));
+        const existingMapsLinks = textNodes.flatMap(textNode =>
+            getFollowingControls(textNode).filter(control =>
+                control.dataset.dealerSocketMapsLink === 'true')
+        );
         if (!address) {
-            existing?.remove();
+            existingMapsLinks.forEach(link => link.remove());
             return;
         }
+        const lastTextNode = textNodes[textNodes.length - 1];
+        const lastNodeControls = getFollowingControls(lastTextNode);
+        const existing = lastNodeControls.find(control =>
+            control.dataset.dealerSocketMapsLink === 'true');
+        existingMapsLinks
+            .filter(link => link !== existing)
+            .forEach(link => link.remove());
         if (existing) {
             existing.href =
                 `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
@@ -486,10 +503,14 @@
             return;
         }
 
-        const range = textNode.ownerDocument.createRange();
-        range.setStart(textNode, textNode.length);
+        const range = lastTextNode.ownerDocument.createRange();
+        if (lastNodeControls.length > 0) {
+            range.setStartAfter(lastNodeControls[lastNodeControls.length - 1]);
+        } else {
+            range.setStart(lastTextNode, lastTextNode.length);
+        }
         range.collapse(true);
-        range.insertNode(createMapsLink(textNode.ownerDocument, address));
+        range.insertNode(createMapsLink(lastTextNode.ownerDocument, address));
     }
 
     function processNameCopyNode(node) {
@@ -555,7 +576,7 @@
 
         for (const block of blocks) {
             const textNodes = getBlockTextNodes(block);
-            textNodes.forEach(addAddressMapButton);
+            addAddressMapButton(textNodes);
             addPhoneLinks(textNodes);
             addVinLinks(getBlockTextNodes(block));
         }
