@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      2.7
+// @version      2.8
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -107,6 +107,78 @@
         return link;
     }
 
+    function createCopyButton(doc, value, label, marker) {
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.title = `Copy ${label}`;
+        button.setAttribute('aria-label', `Copy ${label}`);
+        button.dataset[marker] = 'true';
+        button.style.cssText =
+            'display:inline-flex;align-items:center;margin-left:3px;padding:1px 2px;' +
+            'border:0;background:transparent;color:#2d6cdf;cursor:pointer;' +
+            'vertical-align:middle;line-height:1;';
+
+        const icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('width', '12');
+        icon.setAttribute('height', '12');
+        icon.setAttribute('fill', 'none');
+        icon.setAttribute('stroke', 'currentColor');
+        icon.setAttribute('stroke-width', '2');
+        icon.setAttribute('stroke-linecap', 'round');
+        icon.setAttribute('stroke-linejoin', 'round');
+        icon.setAttribute('aria-hidden', 'true');
+        const outline = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+        outline.setAttribute('d', 'M8 8V4h12v12h-4M4 8h12v12H4z');
+        icon.appendChild(outline);
+        button.appendChild(icon);
+
+        button.addEventListener('click', async event => {
+            event.preventDefault();
+            event.stopPropagation();
+            try {
+                const clipboard = doc.defaultView?.navigator.clipboard;
+                if (!clipboard?.writeText) throw new Error('Clipboard API is unavailable');
+                await clipboard.writeText(value);
+                button.textContent = '✓';
+                button.title = `Copied ${label}`;
+                setTimeout(() => {
+                    if (button.isConnected) {
+                        button.replaceChildren(icon);
+                        button.title = `Copy ${label}`;
+                    }
+                }, 1000);
+            } catch (error) {
+                console.error(`DealerSocket: could not copy ${label}`, error);
+                doc.defaultView?.alert(`Could not copy ${label}. Check clipboard permissions.`);
+            }
+        });
+        return button;
+    }
+
+    function getFollowingControls(node) {
+        const controls = [];
+        const markerKeys = [
+            'dealerSocketVinLink',
+            'dealerSocketVinSearch',
+            'dealerSocketVinCopy',
+            'dealerSocketPhoneLink',
+            'dealerSocketPhoneCopy'
+        ];
+        let next = node.nextSibling;
+        while (next) {
+            if (next.nodeType === Node.TEXT_NODE && !next.nodeValue) {
+                next = next.nextSibling;
+                continue;
+            }
+            if (next.nodeType !== Node.ELEMENT_NODE ||
+                !markerKeys.some(key => next.dataset[key] === 'true')) break;
+            controls.push(next);
+            next = next.nextSibling;
+        }
+        return controls;
+    }
+
     function createVinLink(doc, vin, { sticker = false } = {}) {
         const link = doc.createElement('a');
         if (sticker) {
@@ -172,36 +244,47 @@
         const matches = [];
         while ((match = vinPattern.exec(text)) !== null) {
             const vin = match[0];
-            matches.push({
-                vin,
-                end: match.index + vin.length,
-                isCDJR: cdjrWmis.has(vin.substring(0, 3).toUpperCase())
-            });
+            matches.push({ vin, end: match.index + vin.length });
         }
 
         for (let i = matches.length - 1; i >= 0; i--) {
-            const { vin, end, isCDJR } = matches[i];
+            const { vin, end } = matches[i];
+            const isCDJR = cdjrWmis.has(vin.substring(0, 3).toUpperCase());
             const position = positions.find(item => end <= item.end && end > item.start);
             if (!position) continue;
 
-            const offset = end - position.start;
-            const next = position.node.nextSibling;
-            if (offset === (position.node.nodeValue || '').length &&
-                next?.nodeType === Node.ELEMENT_NODE &&
-                (next.dataset.dealerSocketVinLink === 'true' ||
-                    next.dataset.dealerSocketVinSearch === 'true')) continue;
-
+            const existing = getFollowingControls(position.node);
+            const existingMarkers = new Set(existing.map(control =>
+                Object.keys(control.dataset).find(key => control.dataset[key] === 'true')
+            ));
             const range = position.node.ownerDocument.createRange();
-            range.setStart(position.node, offset);
+            if (existing.length) {
+                range.setStartAfter(existing[existing.length - 1]);
+            } else {
+                range.setStart(position.node, end - position.start);
+            }
             range.collapse(true);
             const doc = position.node.ownerDocument;
             if (isCDJR) {
-                const stickerLink = createVinLink(doc, vin, { sticker: true });
-                range.insertNode(stickerLink);
-                range.setStartAfter(stickerLink);
-                range.collapse(true);
+                if (!existingMarkers.has('dealerSocketVinLink')) {
+                    const stickerLink = createVinLink(doc, vin, { sticker: true });
+                    range.insertNode(stickerLink);
+                    range.setStartAfter(stickerLink);
+                    range.collapse(true);
+                }
+                if (!existingMarkers.has('dealerSocketVinSearch')) {
+                    const searchLink = createVinLink(doc, vin);
+                    range.insertNode(searchLink);
+                    range.setStartAfter(searchLink);
+                    range.collapse(true);
+                }
             }
-            range.insertNode(createVinLink(doc, vin));
+            if (!existingMarkers.has('dealerSocketVinCopy')) {
+                const copyButton = createCopyButton(
+                    doc, vin, 'VIN', 'dealerSocketVinCopy'
+                );
+                range.insertNode(copyButton);
+            }
         }
     }
 
@@ -232,16 +315,29 @@
             const { phone, end } = matches[i];
             const position = positions.find(item => end <= item.end && end > item.start);
             if (!position) continue;
-            const offset = end - position.start;
-            const next = position.node.nextSibling;
-            if (offset === (position.node.nodeValue || '').length &&
-                next?.nodeType === Node.ELEMENT_NODE &&
-                next.dataset.dealerSocketPhoneLink === 'true') continue;
-
+            const existing = getFollowingControls(position.node);
+            const existingMarkers = new Set(existing.map(control =>
+                Object.keys(control.dataset).find(key => control.dataset[key] === 'true')
+            ));
             const range = position.node.ownerDocument.createRange();
-            range.setStart(position.node, offset);
+            if (existing.length) {
+                range.setStartAfter(existing[existing.length - 1]);
+            } else {
+                range.setStart(position.node, end - position.start);
+            }
             range.collapse(true);
-            range.insertNode(createPhoneLink(position.node.ownerDocument, phone));
+            const doc = position.node.ownerDocument;
+            if (!existingMarkers.has('dealerSocketPhoneLink')) {
+                const phoneLink = createPhoneLink(doc, phone);
+                range.insertNode(phoneLink);
+                range.setStartAfter(phoneLink);
+                range.collapse(true);
+            }
+            if (!existingMarkers.has('dealerSocketPhoneCopy')) {
+                range.insertNode(createCopyButton(
+                    doc, phone, 'phone number', 'dealerSocketPhoneCopy'
+                ));
+            }
         }
     }
 
