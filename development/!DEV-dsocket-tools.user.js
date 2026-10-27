@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.3
+// @version      3.4
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -388,31 +388,41 @@
         }
     }
 
-    function addNameCopyButtons(textNodes) {
-        const namePattern =
-            /^\p{Lu}[\p{L}'’.-]*(?:\s+\p{Lu}[\p{L}'’.-]*){1,3}$/u;
-        const excludedNameTerms =
-            /\b(?:address|invalid|city|zip|vehicle|records|dealer|motors|automotive|chrysler|dodge|jeep|ottawa)\b/i;
+    function addNameCopyButton(nameElement) {
+        const name = nameElement.textContent.trim();
+        if (!name) return;
 
-        for (const textNode of textNodes) {
-            const name = (textNode.nodeValue || '').trim();
-            if (!name || name.length > 80 || !namePattern.test(name) ||
-                excludedNameTerms.test(name)) continue;
+        let next = nameElement.nextSibling;
+        while (next && (next.nodeType === Node.COMMENT_NODE ||
+            (next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()))) {
+            next = next.nextSibling;
+        }
+        if (next?.dataset?.dealerSocketNameCopy === 'true') return;
 
-            const controls = getFollowingControls(textNode);
-            if (controls.some(control =>
-                control.dataset.dealerSocketNameCopy === 'true')) continue;
-
-            const range = textNode.ownerDocument.createRange();
-            range.setStart(textNode, textNode.length);
-            range.collapse(true);
-            range.insertNode(createCopyButton(
-                textNode.ownerDocument,
+        nameElement.parentNode.insertBefore(
+            createCopyButton(
+                nameElement.ownerDocument,
                 name,
                 'name',
                 'dealerSocketNameCopy'
-            ));
+            ),
+            nameElement.nextSibling
+        );
+    }
+
+    function processNameCopyNode(node) {
+        const selector = 'span[name="editName"]';
+        const candidates = new Set();
+        if (node.nodeType === Node.TEXT_NODE) {
+            const nameElement = node.parentElement?.closest(selector);
+            if (nameElement) candidates.add(nameElement);
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.matches(selector)) candidates.add(node);
+            node.querySelectorAll(selector).forEach(element => candidates.add(element));
+        } else if (node.querySelectorAll) {
+            node.querySelectorAll(selector).forEach(element => candidates.add(element));
         }
+        candidates.forEach(addNameCopyButton);
     }
 
     function getBlockTextNodes(block) {
@@ -436,6 +446,7 @@
             node.nodeType !== Node.ELEMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
+        processNameCopyNode(node);
         if (node.nodeType === Node.ELEMENT_NODE &&
             node.closest(ignoredPhoneElements)) return;
 
@@ -464,13 +475,14 @@
             const textNodes = getBlockTextNodes(block);
             addPhoneLinks(textNodes);
             addVinLinks(getBlockTextNodes(block));
-            addNameCopyButtons(getBlockTextNodes(block));
         }
     }
 
     function observePhoneDocument(doc) {
         if (observedDocuments.has(doc) || !doc.body) return;
         observedDocuments.add(doc);
+        doc.querySelectorAll('button[data-dealer-socket-name-copy="true"]')
+            .forEach(button => button.remove());
         doc.addEventListener('click', event => {
             handleInjectedControlClick(event, doc);
         }, true);
