@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.6
+// @version      3.7
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -58,6 +58,13 @@
     const phonePattern =
         /(^|[^\d])(\+?(?:\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]?\d{3}[ .-]?\d{4}|\d{3}[.-]\d{4})(?!\d)/g;
     const vinPattern = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
+    const streetAddressPattern =
+        /^\s*\d{1,6}\s+(?:[\p{L}\d.'’-]+\s+){1,8}(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|lane|ln|court|ct|crescent|cres|highway|hwy|terrace|ter|trail|trl|way)\b/iu;
+    const streetAddressSignalPattern =
+        /\b\d{1,6}\s+(?:[\p{L}\d.'’-]+\s+){1,8}(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|lane|ln|court|ct|crescent|cres|highway|hwy|terrace|ter|trail|trl|way)\b/iu;
+    const poBoxPattern = /\bP\.?\s*O\.?\s+Box\s+\d+\b/i;
+    const postalCodePattern =
+        /\b(?:[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\s*\d[ABCEGHJ-NPRSTV-Z]\d|\d{5}(?:-\d{4})?)\b/iu;
     const cdjrWmis = new Set([
         '1C3', '1C4', '1C6', '2C3', '2C4', '2C7', '3C3', '3C4', '3C6',
         'ZAC', 'ZFA'
@@ -467,35 +474,32 @@
             .replace(/\s+/g, ' ')
             .replace(/^[,\s]+|[,\s]+$/g, '')
             .trim();
-        const streetAddress =
-            /^\d{1,6}\s+(?:[\p{L}\d.'’-]+\s+){1,8}(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|lane|ln|court|ct|crescent|cres|highway|hwy|terrace|ter|trail|trl|way)\b/iu;
-        const poBox = /^P\.?\s*O\.?\s+Box\s+\d+\b/i;
-        const postalCode =
-            /\b(?:[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\s*\d[ABCEGHJ-NPRSTV-Z]\d|\d{5}(?:-\d{4})?)\b/iu;
-        return streetAddress.test(address) || poBox.test(address) ||
-            postalCode.test(address) ? address : '';
+        return streetAddressPattern.test(address) || poBoxPattern.test(address) ||
+            postalCodePattern.test(address) ? address : '';
     }
 
     function addAddressMapButton(textNodes) {
         if (textNodes.length === 0) return;
-        const address = getValidAddress(textNodes
-            .map(textNode => textNode.nodeValue || '')
-            .join(' '));
-        const existingMapsLinks = textNodes.flatMap(textNode =>
-            getFollowingControls(textNode).filter(control =>
-                control.dataset.dealerSocketMapsLink === 'true')
-        );
-        if (!address) {
-            existingMapsLinks.forEach(link => link.remove());
-            return;
-        }
         const lastTextNode = textNodes[textNodes.length - 1];
         const lastNodeControls = getFollowingControls(lastTextNode);
         const existing = lastNodeControls.find(control =>
             control.dataset.dealerSocketMapsLink === 'true');
-        existingMapsLinks
-            .filter(link => link !== existing)
-            .forEach(link => link.remove());
+        const hasAddressSignal = textNodes.some(textNode => {
+            const text = textNode.nodeValue || '';
+            return streetAddressSignalPattern.test(text) ||
+                poBoxPattern.test(text) || postalCodePattern.test(text);
+        });
+        if (!hasAddressSignal) {
+            existing?.remove();
+            return;
+        }
+        const address = getValidAddress(textNodes
+            .map(textNode => textNode.nodeValue || '')
+            .join(' '));
+        if (!address) {
+            existing?.remove();
+            return;
+        }
         if (existing) {
             existing.href =
                 `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
