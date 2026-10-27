@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.4
+// @version      3.5
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -197,7 +197,8 @@
 
         if (control.dataset.dealerSocketVinLink === 'true' ||
             control.dataset.dealerSocketVinSearch === 'true' ||
-            control.dataset.dealerSocketPhoneLink === 'true') {
+            control.dataset.dealerSocketPhoneLink === 'true' ||
+            control.dataset.dealerSocketMapsLink === 'true') {
             event.stopImmediatePropagation();
         }
     }
@@ -210,7 +211,8 @@
             'dealerSocketVinCopy',
             'dealerSocketPhoneLink',
             'dealerSocketPhoneCopy',
-            'dealerSocketNameCopy'
+            'dealerSocketNameCopy',
+            'dealerSocketMapsLink'
         ];
         let next = node.nextSibling;
         while (next) {
@@ -388,8 +390,22 @@
         }
     }
 
+    function getNameText(nameElement) {
+        const walker = nameElement.ownerDocument.createTreeWalker(
+            nameElement,
+            NodeFilter.SHOW_TEXT
+        );
+        const parts = [];
+        let textNode;
+        while ((textNode = walker.nextNode())) {
+            const part = textNode.nodeValue.trim();
+            if (part) parts.push(part);
+        }
+        return parts.join(' ');
+    }
+
     function addNameCopyButton(nameElement) {
-        const name = nameElement.textContent.trim();
+        const name = getNameText(nameElement);
         if (!name) return;
 
         let next = nameElement.nextSibling;
@@ -397,7 +413,10 @@
             (next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()))) {
             next = next.nextSibling;
         }
-        if (next?.dataset?.dealerSocketNameCopy === 'true') return;
+        if (next?.dataset?.dealerSocketNameCopy === 'true') {
+            next.dataset.copyValue = name;
+            return;
+        }
 
         nameElement.parentNode.insertBefore(
             createCopyButton(
@@ -408,6 +427,69 @@
             ),
             nameElement.nextSibling
         );
+    }
+
+    function createMapsLink(doc, address) {
+        const link = doc.createElement('a');
+        link.href =
+            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.title = `Search Google Maps for ${address}`;
+        link.setAttribute('aria-label', 'Open address in Google Maps');
+        link.dataset.dealerSocketMapsLink = 'true';
+        link.style.cssText =
+            'display:inline-flex;align-items:center;margin-left:3px;padding:1px 2px;' +
+            'color:#2d6cdf;vertical-align:middle;text-decoration:none;line-height:1;';
+
+        const icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('width', '13');
+        icon.setAttribute('height', '13');
+        icon.setAttribute('fill', 'currentColor');
+        icon.setAttribute('aria-hidden', 'true');
+        const pin = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pin.setAttribute(
+            'd',
+            'M12 22s8-7.2 8-13a8 8 0 1 0-16 0c0 5.8 8 13 8 13zm0-10a3 3 0 1 1 0-6 3 3 0 0 1 0 6z'
+        );
+        icon.appendChild(pin);
+        link.appendChild(icon);
+        return link;
+    }
+
+    function getValidAddress(text) {
+        const address = text
+            .replace(/(?:<\s*)?-?\s*invalid\s+(?:address|city|zip|postal(?:\s+code)?)\s*-?(?:>)?/gi, ' ')
+            .replace(/[<>]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const streetAddress =
+            /^\d{1,6}\s+(?:[\p{L}\d.'’-]+\s+){1,8}(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|lane|ln|court|ct|crescent|cres|highway|hwy|terrace|ter|trail|trl|way)\b/iu;
+        const poBox = /^P\.?\s*O\.?\s+Box\s+\d+\b/i;
+        return streetAddress.test(address) || poBox.test(address) ? address : '';
+    }
+
+    function addAddressMapButton(textNode) {
+        const address = getValidAddress(textNode.nodeValue || '');
+        const controls = getFollowingControls(textNode);
+        const existing = controls.find(control =>
+            control.dataset.dealerSocketMapsLink === 'true');
+        if (!address) {
+            existing?.remove();
+            return;
+        }
+        if (existing) {
+            existing.href =
+                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+            existing.title = `Search Google Maps for ${address}`;
+            return;
+        }
+
+        const range = textNode.ownerDocument.createRange();
+        range.setStart(textNode, textNode.length);
+        range.collapse(true);
+        range.insertNode(createMapsLink(textNode.ownerDocument, address));
     }
 
     function processNameCopyNode(node) {
@@ -473,6 +555,7 @@
 
         for (const block of blocks) {
             const textNodes = getBlockTextNodes(block);
+            textNodes.forEach(addAddressMapButton);
             addPhoneLinks(textNodes);
             addVinLinks(getBlockTextNodes(block));
         }
