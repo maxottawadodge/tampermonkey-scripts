@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         !DEV global phone links
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js
-// @description  Add a click-to-call icon beside phone numbers
+// @description  Add click-to-call links and CDJR VIN tools
 // @match        *://*/*
 // @exclude      *://dealersocket.com/*
 // @exclude      *://*.dealersocket.com/*
@@ -23,6 +23,14 @@
     const skippedElements =
         'a, button, input, select, textarea, script, style, noscript, option, iframe, [contenteditable]:not([contenteditable="false"]), [role="textbox"]';
     const processedTextNodes = new WeakSet();
+    const cdjrWmis = new Set([
+        '1C3', '1C4', '1C6',
+        '2C3', '2C4', '2C7',
+        '3C3', '3C4', '3C6',
+        'ZAC', 'ZFA'
+    ]);
+    let vinDetectionScheduled = false;
+    let vinToolsAdded = false;
 
     function isSkipped(element) {
         return Boolean(element.closest(skippedElements));
@@ -54,6 +62,140 @@
         icon.appendChild(handset);
         link.appendChild(icon);
         return link;
+    }
+
+    function isCDJR(vin) {
+        return cdjrWmis.has(vin.substring(0, 3).toUpperCase());
+    }
+
+    function getCDJRVIN() {
+        const candidates = [];
+        document.querySelectorAll('input[data-vin]').forEach(vinInput => {
+            if (vinInput.dataset.vin) candidates.push(vinInput.dataset.vin);
+        });
+
+        for (const script of document.querySelectorAll(
+            'script[type="application/ld+json"]'
+        )) {
+            try {
+                const data = JSON.parse(script.textContent);
+                if (data?.vehicleIdentificationNumber) {
+                    candidates.push(data.vehicleIdentificationNumber);
+                }
+                if (Array.isArray(data)) {
+                    for (const item of data) {
+                        if (item?.vehicleIdentificationNumber) {
+                            candidates.push(item.vehicleIdentificationNumber);
+                        }
+                    }
+                }
+            } catch (error) {
+                // Ignore unrelated or malformed JSON-LD blocks.
+            }
+        }
+
+        const vinPattern = /\b[A-HJ-NPR-Z0-9]{17}\b/gi;
+        const bodyText = document.body?.textContent || '';
+        let match;
+        while ((match = vinPattern.exec(bodyText)) !== null) {
+            candidates.push(match[0]);
+        }
+
+        return candidates
+            .map(vin => String(vin).trim().toUpperCase())
+            .find(vin => /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) && isCDJR(vin)) || null;
+    }
+
+    function createVINButton(text, color, top, clickHandler) {
+        const button = document.createElement('button');
+        button.textContent = text;
+        button.style.cssText =
+            `position:fixed;top:${top}px;right:15px;z-index:999999;` +
+            `background:${color};color:white;border:none;border-radius:5px;` +
+            'padding:6px 12px;font-size:12px;font-weight:600;cursor:pointer;opacity:.85;';
+        button.addEventListener('click', clickHandler);
+        document.body.appendChild(button);
+    }
+
+    async function decodeVIN(vin) {
+        const popup = window.open('', '_blank');
+        if (!popup) {
+            alert('Allow pop-ups to decode this VIN');
+            return;
+        }
+
+        popup.document.title = `VIN Decode: ${vin}`;
+        popup.document.body.textContent = `Loading VIN ${vin}...`;
+
+        try {
+            const response = await fetch(
+                `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${vin}?format=json`
+            );
+            if (!response.ok) throw new Error(`VIN decode failed: ${response.status}`);
+
+            const json = await response.json();
+            if (!Array.isArray(json.Results)) throw new Error('Invalid VIN decode response');
+            const rows = json.Results.filter(row =>
+                row.Value && row.Value !== '0' && row.Value !== 'Not Applicable'
+            );
+
+            const heading = popup.document.createElement('h1');
+            heading.textContent = vin;
+            const table = popup.document.createElement('table');
+            table.style.cssText = 'border-collapse:collapse;width:100%;';
+
+            for (const row of rows) {
+                const tableRow = table.insertRow();
+                for (const value of [row.Variable, row.Value]) {
+                    const cell = tableRow.insertCell();
+                    cell.textContent = value;
+                    cell.style.cssText = 'border:1px solid #ddd;padding:8px;';
+                }
+            }
+
+            popup.document.body.replaceChildren(heading, table);
+        } catch (error) {
+            console.error(error);
+            popup.close();
+            alert('VIN Decode Failed');
+        }
+    }
+
+    async function copyVIN(vin) {
+        try {
+            await navigator.clipboard.writeText(vin);
+        } catch (error) {
+            console.error(error);
+            alert('Failed to copy VIN');
+        }
+    }
+
+    function addVINTools() {
+        if (vinToolsAdded) return;
+        const vin = getCDJRVIN();
+        if (!vin) return;
+
+        vinToolsAdded = true;
+        createVINButton(
+            'Window Sticker',
+            '#c64545',
+            100,
+            () => window.open(
+                `https://www.chrysler.com/hostd/windowsticker/getWindowStickerPdf.do?vin=${vin}`,
+                '_blank'
+            )
+        );
+        createVINButton('VIN Decode', '#2d6cdf', 135, () => decodeVIN(vin));
+        createVINButton('Copy VIN', '#2f8f5b', 170, () => copyVIN(vin));
+    }
+
+    function scheduleVINDetection() {
+        if (vinDetectionScheduled || vinToolsAdded) return;
+        vinDetectionScheduled = true;
+        requestAnimationFrame(() => {
+            vinDetectionScheduled = false;
+            addVINTools();
+        });
     }
 
     function addPhoneLinks(textNode) {
@@ -129,6 +271,7 @@
 
     function start() {
         processNode(document.body);
+        scheduleVINDetection();
 
         const observer = new MutationObserver(mutations => {
             for (const mutation of mutations) {
@@ -141,6 +284,7 @@
                     }
                 }
             }
+            scheduleVINDetection();
         });
         observer.observe(document.body, {
             childList: true,
