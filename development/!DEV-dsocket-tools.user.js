@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.5
+// @version      3.6
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
@@ -470,8 +470,21 @@
         return streetAddress.test(address) || poBox.test(address) ? address : '';
     }
 
+    function getValidPostalCode(text) {
+        const postalCode = text.replace(/\s+/g, '').toUpperCase();
+        return /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\d[ABCEGHJ-NPRSTV-Z]\d$/.test(postalCode)
+            ? postalCode
+            : '';
+    }
+
     function addAddressMapButton(textNode) {
-        const address = getValidAddress(textNode.nodeValue || '');
+        const text = textNode.nodeValue || '';
+        const postalElement = textNode.parentElement?.closest(
+            '[ng-show="ctrl.contact.address.postal"]'
+        );
+        const address = postalElement
+            ? getValidPostalCode(text)
+            : getValidAddress(text);
         const controls = getFollowingControls(textNode);
         const existing = controls.find(control =>
             control.dataset.dealerSocketMapsLink === 'true');
