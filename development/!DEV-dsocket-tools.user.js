@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.6
+// @version      3.9
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add click-to-call buttons
