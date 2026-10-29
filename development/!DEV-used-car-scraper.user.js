@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.5
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.5
+// @version      1.6
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.6
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.6
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -78,32 +78,70 @@
         const color = colorText.replace(/^[^:]*:\s*/, '');
         const description = document.getElementById('carDescriptionBody') ||
             document.querySelector('.carDescriptionBody');
-        const html = description?.innerHTML || '';
-        const keyFeatures = /Key Features\s*:/i.exec(html);
-        let features = [];
-
-        if (keyFeatures) {
-            const remainingHtml = html.slice(keyFeatures.index + keyFeatures[0].length);
-            const endOfFeatures = /(?:<br\b[^>]*>\s*){2,}/i.exec(remainingHtml);
-            const featuresHtml = endOfFeatures
-                ? remainingHtml.slice(0, endOfFeatures.index)
-                : remainingHtml;
-            const featureContainer = document.createElement('div');
-            featureContainer.innerHTML = featuresHtml;
-            featureContainer.querySelectorAll('br').forEach(br => {
-                br.replaceWith(document.createTextNode('\n'));
-            });
-            features = featureContainer.textContent
-                .split(/\r?\n/)
-                .map(line => cleanNormalText(line))
-                .filter(Boolean);
-        }
+        const features = getKeyFeatures(document, description);
 
         return [
             `- Color: ${cleanNormalText(color)}`,
             '- Key Features:',
             ...features.map(feature => `- ${feature}`)
         ].join('\n');
+    }
+
+    function getKeyFeatures(document, description) {
+        if (!description) return [];
+
+        const textWalker = document.createTreeWalker(
+            description,
+            NodeFilter.SHOW_TEXT
+        );
+        let headingNode;
+        let headingMatch;
+        while ((headingNode = textWalker.nextNode())) {
+            headingMatch = /Key Features\s*:/i.exec(headingNode.nodeValue || '');
+            if (headingMatch) break;
+        }
+        if (!headingNode || !headingMatch) return [];
+
+        const range = document.createRange();
+        range.setStart(
+            headingNode,
+            headingMatch.index + headingMatch[0].length
+        );
+        range.setEnd(description, description.childNodes.length);
+
+        const featureContent = range.cloneContents();
+        const featureWalker = document.createTreeWalker(
+            featureContent,
+            NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
+        );
+        const features = [];
+        let currentFeature = '';
+        let consecutiveBreaks = 0;
+        let node;
+
+        while ((node = featureWalker.nextNode())) {
+            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') {
+                consecutiveBreaks++;
+                if (consecutiveBreaks === 1) {
+                    const feature = cleanNormalText(currentFeature);
+                    if (feature) features.push(feature);
+                    currentFeature = '';
+                } else {
+                    break;
+                }
+                continue;
+            }
+
+            if (node.nodeType !== Node.TEXT_NODE) continue;
+            const text = node.nodeValue || '';
+            if (consecutiveBreaks && !text.trim()) continue;
+            consecutiveBreaks = 0;
+            currentFeature += text;
+        }
+
+        const finalFeature = cleanNormalText(currentFeature);
+        if (finalFeature) features.push(finalFeature);
+        return features;
     }
 
     function cleanNormalText(value) {
@@ -165,10 +203,12 @@
 
         return rows.map(row => row.map(value => {
             const text = value || '';
-            if (!quoteValues) {
-                return text.replace(/[\t\r\n]+/g, ' | ').trim();
-            }
-            return `"${text.replace(/"/g, '""')}"`;
+            const sanitized = quoteValues
+                ? text
+                : text.replace(/\t/g, ' ').trim();
+            return quoteValues || /[\r\n"]/.test(sanitized)
+                ? `"${sanitized.replace(/"/g, '""')}"`
+                : sanitized;
         }).join(delimiter)).join('\r\n');
     }
 
