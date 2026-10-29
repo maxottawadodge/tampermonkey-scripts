@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.2
+// @version      5.3
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js
 // @description  Inventory search, VIN decode, window sticker, and copy tools
@@ -311,68 +311,6 @@ ${rows.map(row => `
         return button;
     }
 
-    function makeInlineButton(text, color, clickHandler) {
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.textContent = text;
-        button.style.cssText =
-            `display:inline-flex;align-items:center;background:${color};color:#fff;` +
-            'border:0;border-radius:3px;padding:2px 4px;font:600 9px verdana;' +
-            'line-height:1.2;cursor:pointer;white-space:nowrap;';
-        button.addEventListener('click', clickHandler);
-        return button;
-    }
-
-    function insertInlineControls(value, marker, controls) {
-        if (document.querySelector(`[data-vin-tools-inline="${marker}"]`)) {
-            return true;
-        }
-
-        const walker = document.createTreeWalker(document.body, NodeFilter.SHOW_TEXT, {
-            acceptNode(textNode) {
-                const parent = textNode.parentElement;
-                return parent && !parent.closest(
-                    'script, style, noscript, textarea, input, button, select, ' +
-                    '[contenteditable]:not([contenteditable="false"])'
-                )
-                    ? NodeFilter.FILTER_ACCEPT
-                    : NodeFilter.FILTER_REJECT;
-            }
-        });
-        const positions = [];
-        let text = '';
-        let textNode;
-        while ((textNode = walker.nextNode())) {
-            const start = text.length;
-            text += textNode.nodeValue || '';
-            positions.push({ node: textNode, start, end: text.length });
-        }
-
-        const matchIndex = text.toUpperCase().indexOf(value.toUpperCase());
-        if (matchIndex === -1) return false;
-        const end = matchIndex + value.length;
-        const position = positions.find(item => end <= item.end && end > item.start);
-        if (!position) return false;
-
-        const wrapper = document.createElement('span');
-        wrapper.dataset.vinToolsInline = marker;
-        wrapper.style.cssText =
-            'display:inline-flex;align-items:center;gap:3px;margin-left:6px;' +
-            'vertical-align:middle;white-space:nowrap;';
-        controls.forEach(control => wrapper.appendChild(control));
-
-        const existingLink = position.node.parentElement.closest('a');
-        if (existingLink) {
-            existingLink.after(wrapper);
-        } else {
-            const range = document.createRange();
-            range.setStart(position.node, end - position.start);
-            range.collapse(true);
-            range.insertNode(wrapper);
-        }
-        return true;
-    }
-
     function handleInventoryPage(cards = document.querySelectorAll('.carBoxOuter')) {
 
         const cardCount = cards?.length ?? cards?.size ?? 0;
@@ -476,6 +414,40 @@ ${rows.map(row => `
         return true;
     }
 
+    function createFloatingButton(
+        text,
+        color,
+        top,
+        clickHandler
+    ) {
+
+        const button = document.createElement('button');
+
+        button.textContent = text;
+
+        button.style.cssText = `
+            position:fixed;
+            top:${top}px;
+            right:15px;
+            z-index:999999;
+            background:${color};
+            color:white;
+            border:none;
+            border-radius:5px;
+            padding:6px 12px;
+            font-size:12px;
+            font-weight:600;
+            cursor:pointer;
+            opacity:.85;
+        `;
+
+        button.addEventListener('click', clickHandler);
+
+        document.body.appendChild(button);
+
+        return button;
+    }
+
     if (handleInventoryPage()) {
         const changedCards = new Set();
         let updateScheduled = false;
@@ -527,50 +499,54 @@ ${rows.map(row => `
         return;
     }
 
-    function addInlineVehicleTools() {
-        const vin = getVIN();
-        if (!vin || document.querySelector('[data-vin-tools-inline="vin"]')) {
-            return Boolean(vin && document.querySelector('[data-vin-tools-inline="vin"]'));
-        }
+    const vin = getVIN();
+    const stockNumber = getStockNumber();
 
-        const controls = [];
-        if (isCDJR(vin)) {
-            controls.push(makeInlineButton(
-                'Sticker',
-                '#c64545',
-                () => window.open(
-                    `https://www.chrysler.com/hostd/windowsticker/getWindowStickerPdf.do?vin=${vin}`,
-                    '_blank'
-                )
-            ));
-        }
-        controls.push(makeInlineButton('Decode', '#2d6cdf', () => decodeVIN(vin)));
-        controls.push(makeInlineButton('Copy VIN', '#2f8f5b', function () {
-            copyVIN(vin, this);
-        }));
-
-        if (!insertInlineControls(vin, 'vin', controls)) return false;
-
-        const stockNumber = getStockNumber();
-        if (stockNumber) {
-            insertInlineControls(stockNumber, 'stock', [
-                makeInlineButton('Copy Stock', '#8a5a2b', function () {
-                    copyValue(stockNumber, this, 'stock number');
-                })
-            ]);
-        }
-        return true;
+    if (!vin) {
+        return;
     }
 
-    if (!addInlineVehicleTools()) {
-        const inlineToolsObserver = new MutationObserver(() => {
-            if (addInlineVehicleTools()) inlineToolsObserver.disconnect();
-        });
-        inlineToolsObserver.observe(document.body, {
-            childList: true,
-            characterData: true,
-            subtree: true
-        });
+    let top = 100;
+
+    if (isCDJR(vin)) {
+        createFloatingButton(
+            'Window Sticker',
+            '#c64545',
+            top,
+            () => window.open(
+                `https://www.chrysler.com/hostd/windowsticker/getWindowStickerPdf.do?vin=${vin}`,
+                '_blank'
+            )
+        );
+        top += 35;
+    }
+
+    createFloatingButton(
+        'VIN Decode',
+        '#2d6cdf',
+        top,
+        () => decodeVIN(vin)
+    );
+    top += 35;
+
+    let copyBtn;
+    copyBtn = createFloatingButton(
+        'Copy VIN',
+        '#2f8f5b',
+        top,
+        () => copyVIN(vin, copyBtn)
+    );
+
+    if (stockNumber) {
+        top += 35;
+        createFloatingButton(
+            'Copy Stock',
+            '#8a5a2b',
+            top,
+            function () {
+                copyValue(stockNumber, this, 'stock number');
+            }
+        );
     }
 
 })();
