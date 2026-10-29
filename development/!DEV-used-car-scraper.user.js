@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.3
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.3
+// @version      1.4
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.4
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.4
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -18,7 +18,10 @@
         ['Name', vehicle => vehicle.name],
         ['Price', vehicle => vehicle.price],
         ['Mileage', vehicle => vehicle.mileage],
-        ['Description', vehicle => vehicle.description]
+        ['Description', vehicle => vehicle.description],
+        ['URL', vehicle => vehicle.url],
+        ['Stock Number', vehicle => vehicle.stock],
+        ['VIN', vehicle => vehicle.vin]
     ];
 
     function cleanText(value) {
@@ -29,7 +32,7 @@
         const priceText = cleanText(card.querySelector('.carPrice')?.textContent);
         const currentPrice = priceText.split(/\bwas\b/i)[0];
         const match = currentPrice.match(/\d[\d,]*(?:\.\d{1,2})?/);
-        return match ? match[0].replace(/,/g, '') : '';
+        return match ? match[0] : '';
     }
 
     function getVehicleCards() {
@@ -61,6 +64,8 @@
                 price: getPrice(card),
                 mileage: cleanText(card.querySelector('.s-km')?.textContent),
                 url: key,
+                stock: cleanText(input.dataset.stockNumber),
+                vin: cleanText(input.dataset.vin).toUpperCase(),
                 description: ''
             });
         }
@@ -69,12 +74,13 @@
     }
 
     function getDescription(document) {
-        const model = cleanText(document.getElementById('specsModel')?.textContent);
+        const colorText = cleanText(document.getElementById('specsExtColor')?.textContent);
+        const color = colorText.replace(/^[^:]*:\s*/, '');
         const description = document.getElementById('carDescriptionBody') ||
             document.querySelector('.carDescriptionBody');
         const html = description?.innerHTML || '';
         const keyFeatures = /Key Features\s*:/i.exec(html);
-        let features = '';
+        let features = [];
 
         if (keyFeatures) {
             const remainingHtml = html.slice(keyFeatures.index + keyFeatures[0].length);
@@ -85,12 +91,28 @@
             const featureContainer = document.createElement('div');
             featureContainer.innerHTML = featuresHtml;
             featureContainer.querySelectorAll('br').forEach(br => {
-                br.replaceWith(document.createTextNode('; '));
+                br.replaceWith(document.createTextNode('\n'));
             });
-            features = cleanText(featureContainer.textContent).replace(/;+/g, ';');
+            features = featureContainer.textContent
+                .split(/\r?\n/)
+                .map(line => cleanNormalText(line))
+                .filter(Boolean);
         }
 
-        return [model, '----------', features].filter(Boolean).join('\n');
+        return [
+            `Color: ${cleanNormalText(color)}`,
+            'Key Features:',
+            ...features.map(feature => `- ${feature}`)
+        ].join('\n');
+    }
+
+    function cleanNormalText(value) {
+        return (value || '')
+            .normalize('NFKD')
+            .replace(/[\u0300-\u036f]/g, '')
+            .replace(/[^\x20-\x7E]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
     }
 
     async function fetchDescription(vehicle) {
