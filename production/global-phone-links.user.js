@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         global phone links
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js
+// @version      1.2
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js?v=1.2
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js?v=1.2
 // @description  Add a click-to-call icon beside phone numbers
 // @match        *://*/*
 // @exclude      *://dealersocket.com/*
