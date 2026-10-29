@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.9
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.9
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.9
+// @version      1.10
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.10
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.10
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -21,7 +21,11 @@
         ['Description', vehicle => vehicle.description],
         ['URL', vehicle => vehicle.url],
         ['Stock Number', vehicle => vehicle.stock],
-        ['VIN', vehicle => vehicle.vin]
+        ['VIN', vehicle => vehicle.vin],
+        ['Year', vehicle => vehicle.year],
+        ['Make', vehicle => vehicle.make],
+        ['Model', vehicle => vehicle.model],
+        ['Trim', vehicle => vehicle.trim]
     ];
 
     function cleanText(value) {
@@ -63,6 +67,10 @@
 
             vehicles.set(key, {
                 name,
+                year,
+                make,
+                model,
+                trim,
                 price: getPrice(card),
                 mileage: cleanText(card.querySelector('.s-km')?.textContent),
                 url: key,
