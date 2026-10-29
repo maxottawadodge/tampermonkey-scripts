@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace listing helper
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.0
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.0
+// @version      1.1
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.1
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.1
 // @description  Create Facebook Marketplace vehicle listings from Google Sheets rows
 // @match        https://docs.google.com/spreadsheets/*
 // @match        https://www.facebook.com/marketplace/create/vehicle*
@@ -34,50 +34,144 @@
 
     function parseCell(cell) {
         const label = cell.getAttribute('aria-label') || '';
-        const coordinate = label.match(/\b([A-Z]+)(\d+)\b/i);
-        if (!coordinate) return null;
+        const rowLabel = cell.closest('[role="row"]')?.getAttribute('aria-label') || '';
+        const coordinates = `${label} ${rowLabel}`.match(
+            /\b([A-Z]{1,3})(\d+)\b/i
+        );
+        const rowNumber = Number(
+            coordinates?.[2] ||
+            cell.getAttribute('aria-rowindex') ||
+            cell.closest('[role="row"]')?.getAttribute('aria-rowindex')
+        );
+        const labeledRow = label.match(/\brow\s+(\d+)\b/i);
+        const labeledColumn = label.match(/\bcolumn\s+([A-Z]+)\b/i);
+        const resolvedRowNumber = rowNumber || Number(labeledRow?.[1]);
+        const columnLetters = coordinates?.[1]?.toUpperCase() ||
+            labeledColumn?.[1]?.toUpperCase();
+        const columnIndex = Number(cell.getAttribute('aria-colindex'));
+        const column = columnLetters || (columnIndex
+            ? columnName(columnIndex)
+            : '');
+        if (!resolvedRowNumber || !column) return null;
 
         const labelValue = label
-            .replace(/\b[A-Z]+\d+\b/i, '')
+            .replace(/\b[A-Z]{1,3}\d+\b/i, '')
+            .replace(/\bcolumn\s+[A-Z]+\b/gi, '')
+            .replace(/\brow\s+\d+\b/gi, '')
             .replace(/^\s*[:,\-\s]+|[\s,:\-]+$/g, '')
             .trim();
-        const value = labelValue || cell.textContent || '';
+        const value = labelValue || cell.getAttribute('data-value') ||
+            cell.textContent || '';
 
         return {
-            column: coordinate[1].toUpperCase(),
-            row: Number(coordinate[2]),
+            column,
+            row: resolvedRowNumber,
             value: value.trim()
         };
     }
 
+    function columnName(index) {
+        let name = '';
+        while (index > 0) {
+            index--;
+            name = String.fromCharCode(65 + index % 26) + name;
+            index = Math.floor(index / 26);
+        }
+        return name;
+    }
+
     function getSheetRows() {
         const rows = new Map();
-        for (const rowElement of document.querySelectorAll('[role="row"]')) {
-            const cells = [...rowElement.querySelectorAll('[role="gridcell"]')]
-                .map(parseCell)
-                .filter(Boolean);
-            if (!cells.length) continue;
+        const cellsByRow = new Map();
+        for (const cell of document.querySelectorAll(
+            '[role="gridcell"], [role="columnheader"], [role="rowheader"]'
+        )) {
+            const parsedCell = parseCell(cell);
+            if (!parsedCell) continue;
 
-            const rowNumber = cells[0].row;
-            rows.set(rowNumber, {
-                element: rowElement,
-                values: new Map(cells.map(cell => [cell.column, cell.value]))
-            });
+            if (!cellsByRow.has(parsedCell.row)) {
+                cellsByRow.set(parsedCell.row, []);
+            }
+            cellsByRow.get(parsedCell.row).push({ cell, parsedCell });
+        }
+
+        for (const [rowNumber, entries] of cellsByRow) {
+            const rowElement = entries[0].cell.closest('[role="row"]') ||
+                entries[0].cell.parentElement;
+            const values = new Map(
+                entries.map(({ parsedCell }) => [
+                    parsedCell.column,
+                    parsedCell.value
+                ])
+            );
+            if (rowElement) {
+                rows.set(rowNumber, { element: rowElement, values });
+            }
         }
         return rows;
     }
 
+    function normalizeHeader(value) {
+        return normalize(value)
+            .replace(/[_-]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+    }
+
     function findColumnHeaders(rows) {
         for (const [rowNumber, row] of rows) {
-            const columns = new Map();
+            const foundColumns = new Map();
             for (const [column, value] of row.values) {
-                columns.set(normalize(value), column);
+                const header = normalizeHeader(value);
+                if (header) foundColumns.set(header, column);
             }
-            const hasRequiredHeaders = ['year', 'make', 'model', 'price']
-                .every(header => columns.has(header));
+
+            const columns = new Map();
+            const headersByField = {
+                ...fieldAliases,
+                year: ['year', 'vehicle year'],
+                make: ['make', 'vehicle make'],
+                model: ['model', 'vehicle model'],
+                price: ['price', 'listing price']
+            };
+            let hasRequiredHeaders = true;
+            for (const [field, aliases] of Object.entries(headersByField)) {
+                const matchedColumn = aliases
+                    .map(normalizeHeader)
+                    .map(alias => foundColumns.get(alias))
+                    .find(Boolean);
+                if (['year', 'make', 'model', 'price'].includes(field) &&
+                    !matchedColumn) {
+                    hasRequiredHeaders = false;
+                    break;
+                }
+                if (matchedColumn) {
+                    for (const alias of fieldAliases[field] || aliases) {
+                        columns.set(alias, matchedColumn);
+                    }
+                }
+            }
             if (hasRequiredHeaders) return { rowNumber, columns };
         }
         return null;
+    }
+
+    function getScraperColumnHeaders() {
+        return {
+            rowNumber: 0,
+            columns: new Map([
+                ['price', 'B'],
+                ['mileage', 'C'],
+                ['description', 'D'],
+                ['year', 'H'],
+                ['make', 'I'],
+                ['model', 'J'],
+                ['fuel type', 'L'],
+                ['fuel', 'L'],
+                ['transmission type', 'M'],
+                ['transmission', 'M']
+            ])
+        };
     }
 
     function getVehicleData(row, headers) {
@@ -127,7 +221,7 @@
     function startSpreadsheet() {
         const panel = document.createElement('div');
         panel.style.cssText =
-            'position:fixed;left:12px;bottom:12px;z-index:999999;' +
+            'position:fixed;right:12px;bottom:12px;z-index:999999;' +
             'display:flex;align-items:center;gap:8px;padding:8px;' +
             'background:#fff;border:1px solid #bbb;border-radius:6px;' +
             'box-shadow:0 2px 10px rgba(0,0,0,.2);font:13px Arial,sans-serif;';
@@ -159,14 +253,14 @@
         function updateButtons() {
             if (!enabled) return;
             const rows = getSheetRows();
-            const headers = findColumnHeaders(rows);
-            if (!headers) {
+            if (!rows.size) {
                 setStatus(
-                    'Could not find Year, Make, Model, and Price headers. ' +
-                    'Enable Google Sheets screen reader support or show the header row.'
+                    'No accessible spreadsheet cells found. Reload the sheet after enabling screen reader support.'
                 );
                 return;
             }
+            const detectedHeaders = findColumnHeaders(rows);
+            const headers = detectedHeaders || getScraperColumnHeaders();
 
             let count = 0;
             for (const [rowNumber, row] of rows) {
@@ -180,7 +274,9 @@
                 });
                 count++;
             }
-            setStatus(`Listing buttons added to ${count} visible rows.`);
+            setStatus(detectedHeaders
+                ? `Listing buttons added to ${count} visible rows.`
+                : `Added buttons to ${count} visible rows using the used-car scraper's standard columns.`);
         }
 
         toggle.addEventListener('click', () => {
