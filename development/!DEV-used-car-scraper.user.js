@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.7
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.7
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.7
+// @version      1.8
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.8
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.8
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -102,7 +102,9 @@
             headingMatch = /Key Features\s*:/i.exec(headingNode.nodeValue || '');
             if (headingMatch) break;
         }
-        if (!headingNode || !headingMatch) return [];
+        if (!headingNode || !headingMatch) {
+            return getQuestionMarkFeatures(document, description);
+        }
 
         const range = document.createRange();
         range.setStart(
@@ -143,6 +145,52 @@
 
         const finalFeature = cleanNormalText(currentFeature);
         if (finalFeature) features.push(finalFeature);
+        return features.length
+            ? features
+            : getQuestionMarkFeatures(document, description);
+    }
+
+    function getQuestionMarkFeatures(document, description) {
+        const walker = document.createTreeWalker(
+            description,
+            NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
+        );
+        const lines = [];
+        let currentLine = '';
+        let consecutiveBreaks = 0;
+        let node;
+
+        while ((node = walker.nextNode())) {
+            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') {
+                consecutiveBreaks++;
+                if (consecutiveBreaks === 1) {
+                    lines.push({ text: currentLine, endsBlock: false });
+                    currentLine = '';
+                } else if (lines.length) {
+                    lines[lines.length - 1].endsBlock = true;
+                }
+                continue;
+            }
+
+            if (node.nodeType !== Node.TEXT_NODE) continue;
+            const text = node.nodeValue || '';
+            if (consecutiveBreaks && !text.trim()) continue;
+            consecutiveBreaks = 0;
+            currentLine += text;
+        }
+
+        lines.push({ text: currentLine, endsBlock: false });
+        const start = lines.findIndex(line =>
+            /^\?\s+/.test(cleanNormalText(line.text))
+        );
+        if (start === -1) return [];
+
+        const features = [];
+        for (let index = start; index < lines.length; index++) {
+            if (index > start && lines[index - 1].endsBlock) break;
+            const match = cleanNormalText(lines[index].text).match(/^\?\s+(.+)$/);
+            if (match) features.push(cleanNormalText(match[1]));
+        }
         return features;
     }
 
