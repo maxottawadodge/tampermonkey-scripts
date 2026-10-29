@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.1
+// @version      1.2
 // @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js
 // @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js
 // @description  Export used vehicle listings to Google Sheets or CSV
@@ -221,7 +221,6 @@
                 status.textContent = 'Copy failed. Try Download CSV instead.';
             }
         });
-        const downloadButton = makeButton('Download CSV', () => {
         const downloadButton = makeButton('Download CSV', () => {
             if (!hasRun || !vehicles.length) {
                 status.textContent = 'Click Run Scrape before exporting.';
