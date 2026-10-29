@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.10
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.10
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.10
+// @version      1.11
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.11
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.11
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -25,7 +25,9 @@
         ['Year', vehicle => vehicle.year],
         ['Make', vehicle => vehicle.make],
         ['Model', vehicle => vehicle.model],
-        ['Trim', vehicle => vehicle.trim]
+        ['Trim', vehicle => vehicle.trim],
+        ['Fuel Type', vehicle => vehicle.fuelType],
+        ['Transmission Type', vehicle => vehicle.transmissionType]
     ];
 
     function cleanText(value) {
@@ -76,7 +78,9 @@
                 url: key,
                 stock: cleanText(input.dataset.stockNumber),
                 vin: cleanText(input.dataset.vin).toUpperCase(),
-                description: ''
+                description: '',
+                fuelType: '',
+                transmissionType: ''
             });
         }
 
@@ -211,14 +215,28 @@
             .trim();
     }
 
-    async function fetchDescription(vehicle) {
+    function getSpecValue(document, inputName, elementId) {
+        const inputValue = document.querySelector(`input[name="${inputName}"]`)?.value;
+        const elementValue = document.getElementById(elementId)?.textContent;
+        return cleanText(inputValue || elementValue).replace(/^[^:]*:\s*/, '');
+    }
+
+    async function fetchVehicleDetails(vehicle) {
         const response = await fetch(vehicle.url, { credentials: 'same-origin' });
         if (!response.ok) {
             throw new Error(`Could not load ${vehicle.url}: HTTP ${response.status}`);
         }
         const html = await response.text();
         const detailDocument = new DOMParser().parseFromString(html, 'text/html');
-        return getDescription(detailDocument);
+        return {
+            description: getDescription(detailDocument),
+            fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
+            transmissionType: getSpecValue(
+                detailDocument,
+                'transmission',
+                'specsTransmission'
+            )
+        };
     }
 
     async function scrapeVehicles(vehicles, onProgress) {
@@ -231,12 +249,14 @@
                 const index = nextIndex++;
                 const vehicle = vehicles[index];
                 try {
-                    vehicle.description = await fetchDescription(vehicle);
+                    Object.assign(vehicle, await fetchVehicleDetails(vehicle));
                     if (!vehicle.description) {
                         throw new Error(`No description found at ${vehicle.url}`);
                     }
                 } catch (error) {
                     vehicle.description = '';
+                    vehicle.fuelType = '';
+                    vehicle.transmissionType = '';
                     errors.push(error);
                     console.error('Could not scrape vehicle description', error);
                 }
