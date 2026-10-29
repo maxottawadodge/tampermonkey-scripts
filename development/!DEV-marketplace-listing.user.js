@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace listing helper
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.1
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.1
+// @version      1.2
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.2
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js?v=1.2
 // @description  Create Facebook Marketplace vehicle listings from Google Sheets rows
 // @match        https://docs.google.com/spreadsheets/*
 // @match        https://www.facebook.com/marketplace/create/vehicle*
@@ -30,6 +30,13 @@
 
     function normalize(value) {
         return (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function isInViewport(element) {
+        const rect = element.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0 &&
+            rect.bottom > 0 && rect.right > 0 &&
+            rect.top < window.innerHeight && rect.left < window.innerWidth;
     }
 
     function parseCell(cell) {
@@ -86,6 +93,7 @@
         for (const cell of document.querySelectorAll(
             '[role="gridcell"], [role="columnheader"], [role="rowheader"]'
         )) {
+            if (!isInViewport(cell)) continue;
             const parsedCell = parseCell(cell);
             if (!parsedCell) continue;
 
@@ -158,7 +166,7 @@
 
     function getScraperColumnHeaders() {
         return {
-            rowNumber: 0,
+            rowNumber: 1,
             columns: new Map([
                 ['price', 'B'],
                 ['mileage', 'C'],
@@ -195,27 +203,37 @@
     }
 
     function addRowButton(rowElement, rowNumber, getData) {
-        const existingButton = rowElement.querySelector(`[${buttonAttribute}]`);
-        if (existingButton?.dataset.rowNumber === String(rowNumber)) return;
-        existingButton?.remove();
+        const existingButton = [...document.querySelectorAll(
+            `[${buttonAttribute}]`
+        )].find(button => button.dataset.rowNumber === String(rowNumber));
+        const button = existingButton || document.createElement('button');
+        if (!existingButton) {
+            button.type = 'button';
+            button.setAttribute(buttonAttribute, '1');
+            button.dataset.rowNumber = String(rowNumber);
+            button.textContent = 'List';
+            button.title = `Create Marketplace listing from row ${rowNumber}`;
+            button.style.cssText =
+                'position:fixed;z-index:999998;padding:4px 8px;' +
+                'border:0;border-radius:4px;background:#1877f2;color:#fff;' +
+                'font:600 11px Arial,sans-serif;cursor:pointer;';
+            button.addEventListener('click', () => {
+                const data = getData();
+                const url = new URL(marketplaceUrl);
+                url.searchParams.set(dataParameter, JSON.stringify(data));
+                window.open(url.href, '_blank', 'noopener');
+            });
+            document.body.appendChild(button);
+        }
 
-        const button = document.createElement('button');
-        button.type = 'button';
-        button.setAttribute(buttonAttribute, '1');
-        button.dataset.rowNumber = String(rowNumber);
-        button.textContent = 'Create Marketplace listing';
-        button.title = `Create listing from spreadsheet row ${rowNumber}`;
-        button.style.cssText =
-            'position:absolute;right:4px;top:2px;z-index:20;padding:4px 7px;' +
-            'border:0;border-radius:4px;background:#1877f2;color:#fff;' +
-            'font:600 11px Arial,sans-serif;cursor:pointer;white-space:nowrap;';
-        button.addEventListener('click', () => {
-            const data = getData();
-            const url = new URL(marketplaceUrl);
-            url.searchParams.set(dataParameter, JSON.stringify(data));
-            window.open(url.href, '_blank', 'noopener');
-        });
-        rowElement.appendChild(button);
+        const rowRect = rowElement.getBoundingClientRect();
+        const buttonWidth = button.offsetWidth || 48;
+        const left = Math.max(4, Math.min(
+            rowRect.right - buttonWidth - 4,
+            window.innerWidth - buttonWidth - 4
+        ));
+        button.style.left = `${Math.round(left)}px`;
+        button.style.top = `${Math.round(rowRect.top + 2)}px`;
     }
 
     function startSpreadsheet() {
@@ -253,6 +271,12 @@
         function updateButtons() {
             if (!enabled) return;
             const rows = getSheetRows();
+            const visibleRowNumbers = new Set(rows.keys());
+            document.querySelectorAll(`[${buttonAttribute}]`).forEach(button => {
+                if (!visibleRowNumbers.has(Number(button.dataset.rowNumber))) {
+                    button.remove();
+                }
+            });
             if (!rows.size) {
                 setStatus(
                     'No accessible spreadsheet cells found. Reload the sheet after enabling screen reader support.'
@@ -265,6 +289,7 @@
             let count = 0;
             for (const [rowNumber, row] of rows) {
                 if (rowNumber <= headers.rowNumber) continue;
+                if (!isInViewport(row.element)) continue;
                 addRowButton(row.element, rowNumber, () => {
                     const currentRows = getSheetRows();
                     const currentRow = currentRows.get(rowNumber);
@@ -292,14 +317,23 @@
                     attributeFilter: ['aria-label']
                 });
                 updateButtons();
+                document.addEventListener('scroll', scheduleUpdate, true);
+                window.addEventListener('resize', scheduleUpdate);
             } else {
                 observer.disconnect();
+                document.removeEventListener('scroll', scheduleUpdate, true);
+                window.removeEventListener('resize', scheduleUpdate);
                 document.querySelectorAll(`[${buttonAttribute}]`).forEach(button => {
                     button.remove();
                 });
                 setStatus('Listing buttons are disabled.');
             }
         });
+
+        function scheduleUpdate() {
+            window.clearTimeout(updateTimer);
+            updateTimer = window.setTimeout(updateButtons, 100);
+        }
     }
 
     function getFieldCandidates() {
