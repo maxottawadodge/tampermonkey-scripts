@@ -1,14 +1,17 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.11
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.11
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.11
+// @version      1.12
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.12
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.12
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
 // @match        https://www.ottawachryslerjeepdodge.com/used/search.html*
-// @grant        none
+// @grant        GM_getValue
+// @grant        GM_setValue
+// @grant        GM_xmlhttpRequest
+// @connect      generativelanguage.googleapis.com
 // ==/UserScript==
 
 (function () {
@@ -87,134 +90,6 @@
         return [...vehicles.values()];
     }
 
-    function getDescription(document) {
-        const colorText = cleanText(document.getElementById('specsExtColor')?.textContent);
-        const color = colorText.replace(/^[^:]*:\s*/, '');
-        const description = document.getElementById('carDescriptionBody') ||
-            document.querySelector('.carDescriptionBody');
-        const features = getKeyFeatures(document, description);
-
-        return [
-            `Color: ${cleanNormalText(color)}`,
-            'Key Features:',
-            ...features.map(feature => `    - ${feature}`)
-        ].join('\n');
-    }
-
-    function getKeyFeatures(document, description) {
-        if (!description) return [];
-
-        const textWalker = document.createTreeWalker(
-            description,
-            NodeFilter.SHOW_TEXT
-        );
-        let headingNode;
-        let headingMatch;
-        while ((headingNode = textWalker.nextNode())) {
-            headingMatch = /Key Features\s*:/i.exec(headingNode.nodeValue || '');
-            if (headingMatch) break;
-        }
-        if (!headingNode || !headingMatch) {
-            return getQuestionMarkFeatures(document, description);
-        }
-
-        const range = document.createRange();
-        range.setStart(
-            headingNode,
-            headingMatch.index + headingMatch[0].length
-        );
-        range.setEnd(description, description.childNodes.length);
-
-        const featureContent = range.cloneContents();
-        const featureWalker = document.createTreeWalker(
-            featureContent,
-            NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
-        );
-        const features = [];
-        let currentFeature = '';
-        let consecutiveBreaks = 0;
-        let node;
-
-        while ((node = featureWalker.nextNode())) {
-            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') {
-                consecutiveBreaks++;
-                if (consecutiveBreaks === 1) {
-                    const feature = cleanNormalText(currentFeature);
-                    if (feature) features.push(feature);
-                    currentFeature = '';
-                } else {
-                    break;
-                }
-                continue;
-            }
-
-            if (node.nodeType !== Node.TEXT_NODE) continue;
-            const text = node.nodeValue || '';
-            if (consecutiveBreaks && !text.trim()) continue;
-            consecutiveBreaks = 0;
-            currentFeature += text;
-        }
-
-        const finalFeature = cleanNormalText(currentFeature);
-        if (finalFeature) features.push(finalFeature);
-        return features.length
-            ? features
-            : getQuestionMarkFeatures(document, description);
-    }
-
-    function getQuestionMarkFeatures(document, description) {
-        const walker = document.createTreeWalker(
-            description,
-            NodeFilter.SHOW_ELEMENT | NodeFilter.SHOW_TEXT
-        );
-        const lines = [];
-        let currentLine = '';
-        let consecutiveBreaks = 0;
-        let node;
-
-        while ((node = walker.nextNode())) {
-            if (node.nodeType === Node.ELEMENT_NODE && node.tagName === 'BR') {
-                consecutiveBreaks++;
-                if (consecutiveBreaks === 1) {
-                    lines.push({ text: currentLine, endsBlock: false });
-                    currentLine = '';
-                } else if (lines.length) {
-                    lines[lines.length - 1].endsBlock = true;
-                }
-                continue;
-            }
-
-            if (node.nodeType !== Node.TEXT_NODE) continue;
-            const text = node.nodeValue || '';
-            if (consecutiveBreaks && !text.trim()) continue;
-            consecutiveBreaks = 0;
-            currentLine += text;
-        }
-
-        lines.push({ text: currentLine, endsBlock: false });
-        const start = lines.findIndex(line =>
-            /^\?\s+/.test(cleanNormalText(line.text))
-        );
-        if (start === -1) return [];
-
-        const features = [];
-        for (let index = start; index < lines.length; index++) {
-            if (index > start && lines[index - 1].endsBlock) break;
-            const match = cleanNormalText(lines[index].text).match(/^\?\s+(.+)$/);
-            if (match) features.push(cleanNormalText(match[1]));
-        }
-        return features;
-    }
-
-    function cleanNormalText(value) {
-        return (value || '')
-            .normalize('NFKD')
-            .replace(/[\u0300-\u036f]/g, '')
-            .replace(/[^\x20-\x7E]/g, ' ')
-            .replace(/\s+/g, ' ')
-            .trim();
-    }
-
     function getSpecValue(document, inputName, elementId) {
         const inputValue = document.querySelector(`input[name="${inputName}"]`)?.value;
         const elementValue = document.getElementById(elementId)?.textContent;
@@ -229,7 +104,6 @@
         const html = await response.text();
         const detailDocument = new DOMParser().parseFromString(html, 'text/html');
         return {
-            description: getDescription(detailDocument),
             fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
             transmissionType: getSpecValue(
                 detailDocument,
@@ -239,10 +113,85 @@
         };
     }
 
-    async function scrapeVehicles(vehicles, onProgress) {
+    function generateDescription(vehicle, apiKey) {
+        const fields = [
+            ['Year', vehicle.year],
+            ['Make', vehicle.make],
+            ['Model', vehicle.model],
+            ['Trim', vehicle.trim],
+            ['Price', vehicle.price ? `$${vehicle.price}` : ''],
+            ['Mileage', vehicle.mileage],
+            ['VIN', vehicle.vin]
+        ];
+        const vehicleDetails = fields
+            .filter(([, value]) => value)
+            .map(([label, value]) => `${label}: ${value}`)
+            .join('\n');
+        const prompt = [
+            'Write one concise, natural-sounding used-vehicle sales description.',
+            'Use only the vehicle information provided below. Do not invent features, condition, history, or specifications.',
+            'Mention the year, make, model, trim, price, and mileage when provided.',
+            'Do not mention color or provide a key-features list. Do not include the VIN in the description.',
+            '',
+            vehicleDetails
+        ].join('\n');
+
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'x-goog-api-key': apiKey
+                },
+                data: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { temperature: 0.3 }
+                }),
+                timeout: 30000,
+                onload(response) {
+                    let result;
+                    try {
+                        result = JSON.parse(response.responseText || '{}');
+                    } catch {
+                        reject(new Error('Gemini returned an invalid response.'));
+                        return;
+                    }
+
+                    if (response.status < 200 || response.status >= 300) {
+                        reject(new Error(
+                            result.error?.message ||
+                            `Gemini request failed with HTTP ${response.status}.`
+                        ));
+                        return;
+                    }
+
+                    const description = cleanText(
+                        result.candidates?.[0]?.content?.parts
+                            ?.map(part => part.text || '')
+                            .join('')
+                    );
+                    if (!description) {
+                        reject(new Error('Gemini returned an empty description.'));
+                        return;
+                    }
+                    resolve(description);
+                },
+                onerror() {
+                    reject(new Error('Could not connect to the Gemini API.'));
+                },
+                ontimeout() {
+                    reject(new Error('Gemini description request timed out.'));
+                }
+            });
+        });
+    }
+
+    async function scrapeVehicles(vehicles, apiKey, onProgress) {
         let nextIndex = 0;
         let completed = 0;
-        const errors = [];
+        const descriptionErrors = [];
+        const detailErrors = [];
 
         async function worker() {
             while (nextIndex < vehicles.length) {
@@ -250,15 +199,21 @@
                 const vehicle = vehicles[index];
                 try {
                     Object.assign(vehicle, await fetchVehicleDetails(vehicle));
-                    if (!vehicle.description) {
-                        throw new Error(`No description found at ${vehicle.url}`);
-                    }
                 } catch (error) {
-                    vehicle.description = '';
                     vehicle.fuelType = '';
                     vehicle.transmissionType = '';
-                    errors.push(error);
-                    console.error('Could not scrape vehicle description', error);
+                    detailErrors.push(error);
+                    console.error('Could not scrape vehicle details', error);
+                }
+                try {
+                    vehicle.description = await generateDescription(vehicle, apiKey);
+                } catch (error) {
+                    vehicle.description = '';
+                    descriptionErrors.push(error);
+                    console.error(
+                        `Could not generate description for ${vehicle.url}`,
+                        error
+                    );
                 }
                 completed++;
                 onProgress(completed, vehicles.length);
@@ -268,7 +223,7 @@
         await Promise.all(
             Array.from({ length: Math.min(3, vehicles.length) }, () => worker())
         );
-        return errors;
+        return { descriptionErrors, detailErrors };
     }
 
     function makeDelimitedText(vehicles, delimiter, quoteValues) {
@@ -297,13 +252,16 @@
         panel.id = 'dev-used-car-scraper';
         panel.style.cssText =
             'position:fixed;right:16px;bottom:16px;z-index:999999;' +
-            'display:flex;align-items:center;gap:8px;padding:10px;' +
+            'display:flex;align-items:center;flex-wrap:wrap;gap:8px;padding:10px;' +
+            'max-width:calc(100vw - 52px);' +
             'background:#fff;border:1px solid #bbb;border-radius:6px;' +
             'box-shadow:0 2px 10px rgba(0,0,0,.2);font:13px Arial,sans-serif;';
 
         const status = document.createElement('span');
         status.setAttribute('aria-live', 'polite');
-        status.textContent = 'Ready. Click Run Scrape.';
+        status.textContent = GM_getValue('geminiApiKey', '')
+            ? 'Gemini API key ready. Click Run Scrape.'
+            : 'Add a Gemini API key, then click Run Scrape.';
         let vehicles = [];
         let hasRun = false;
 
@@ -318,7 +276,29 @@
             return button;
         }
 
+        const apiKeyInput = document.createElement('input');
+        apiKeyInput.type = 'password';
+        apiKeyInput.autocomplete = 'off';
+        apiKeyInput.placeholder = 'Gemini API key';
+        apiKeyInput.setAttribute('aria-label', 'Gemini API key');
+        apiKeyInput.style.cssText =
+            'box-sizing:border-box;width:180px;padding:7px 8px;' +
+            'border:1px solid #bbb;border-radius:4px;';
+        const saveKeyButton = makeButton('Save key', () => {
+            GM_setValue('geminiApiKey', apiKeyInput.value.trim());
+            apiKeyInput.value = '';
+            status.textContent = GM_getValue('geminiApiKey', '')
+                ? 'Gemini API key saved in Tampermonkey.'
+                : 'Gemini API key cleared.';
+        });
+
         const runButton = makeButton('Run Scrape', async () => {
+            const apiKey = String(GM_getValue('geminiApiKey', '')).trim();
+            if (!apiKey) {
+                status.textContent = 'Enter and save a Gemini API key first.';
+                apiKeyInput.focus();
+                return;
+            }
             runButton.disabled = true;
             copyButton.disabled = true;
             downloadButton.disabled = true;
@@ -331,15 +311,19 @@
             }
 
             try {
-                const errors = await scrapeVehicles(vehicles, (completed, total) => {
-                    status.textContent = `Scraping descriptions: ${completed}/${total}`;
-                });
+                const { descriptionErrors, detailErrors } = await scrapeVehicles(
+                    vehicles,
+                    apiKey,
+                    (completed, total) => {
+                        status.textContent = `Generating descriptions: ${completed}/${total}`;
+                    }
+                );
                 hasRun = true;
                 copyButton.disabled = false;
                 downloadButton.disabled = false;
-                status.textContent = errors.length
-                    ? `Scraped ${vehicles.length} vehicles; ${errors.length} descriptions failed.`
-                    : `Scraped ${vehicles.length} vehicles. Ready to export.`;
+                status.textContent = descriptionErrors.length || detailErrors.length
+                    ? `Processed ${vehicles.length} vehicles; ${descriptionErrors.length} descriptions and ${detailErrors.length} detail lookups failed.`
+                    : `Generated descriptions for ${vehicles.length} vehicles. Ready to export.`;
             } finally {
                 runButton.disabled = false;
             }
@@ -382,7 +366,14 @@
 
         copyButton.disabled = true;
         downloadButton.disabled = true;
-        panel.append(status, runButton, copyButton, downloadButton);
+        panel.append(
+            status,
+            apiKeyInput,
+            saveKeyButton,
+            runButton,
+            copyButton,
+            downloadButton
+        );
         document.body.appendChild(panel);
     }
 
