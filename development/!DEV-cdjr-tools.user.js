@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.5
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.5
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.5
+// @version      5.6
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.6
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.6
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -52,6 +52,7 @@
         localOnlyLabel.style.cssText = 'display:flex;align-items:center;gap:2px;';
         const localOnlyCheckbox = document.createElement('input');
         localOnlyCheckbox.type = 'checkbox';
+        localOnlyCheckbox.checked = true;
         localOnlyCheckbox.setAttribute('aria-label', 'Local search only');
         localOnlyLabel.append(
             localOnlyCheckbox,
