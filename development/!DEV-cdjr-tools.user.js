@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.6
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.6
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.6
+// @version      5.7
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.7
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.7
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -65,7 +65,6 @@
 
         function search() {
             const term = input.value.trim();
-            if (!term) return;
 
             const categoryIds = categories
                 .filter(category => category.checkbox.checked)
@@ -74,20 +73,21 @@
                 .join('');
             if (!categoryIds) return;
 
-            const filter = [{
-                tsearch: [{
-                    n: 'fieldsearch',
-                    v: term.toLowerCase(),
-                    s: 1
-                }]
-            }];
-            const encoded = btoa(JSON.stringify(filter));
+            const searchFilter = term
+                ? '+' + btoa(JSON.stringify([{
+                    tsearch: [{
+                        n: 'fieldsearch',
+                        v: term.toLowerCase(),
+                        s: 1
+                    }]
+                }]))
+                : '';
             const dealerFilter = localOnlyCheckbox.checked ? 's47Ex0' : 'x0';
-            const prefix = `a9b${categoryIds}q0-10${dealerFilter}-0-0+`;
+            const prefix = `a9b${categoryIds}q0-10${dealerFilter}-0-0`;
 
             window.location.href =
                 'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
-                prefix + encoded;
+                prefix + searchFilter;
         }
 
         button.addEventListener('click', search);
