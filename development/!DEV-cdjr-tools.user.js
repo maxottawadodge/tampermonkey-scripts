@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.4
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.4
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.4
+// @version      5.5
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.5
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.5
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -48,6 +48,16 @@
             return { ...category, checkbox };
         });
 
+        const localOnlyLabel = document.createElement('label');
+        localOnlyLabel.style.cssText = 'display:flex;align-items:center;gap:2px;';
+        const localOnlyCheckbox = document.createElement('input');
+        localOnlyCheckbox.type = 'checkbox';
+        localOnlyCheckbox.setAttribute('aria-label', 'Local search only');
+        localOnlyLabel.append(
+            localOnlyCheckbox,
+            document.createTextNode('Local only')
+        );
+
         const button = document.createElement('button');
         button.textContent = 'Search';
         button.style.cssText = 'padding:6px 10px;cursor:pointer;';
@@ -71,7 +81,8 @@
                 }]
             }];
             const encoded = btoa(JSON.stringify(filter));
-            const prefix = `a9b${categoryIds}q0-10x0-0-0+`;
+            const dealerFilter = localOnlyCheckbox.checked ? 's47Ex0' : 'x0';
+            const prefix = `a9b${categoryIds}q0-10${dealerFilter}-0-0+`;
 
             window.location.href =
                 'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
@@ -98,7 +109,7 @@
             }
         });
 
-        container.append(input, categoryGroup, button);
+        container.append(input, categoryGroup, localOnlyLabel, button);
         document.body.appendChild(container);
         window.setTimeout(() => input.focus(), 250);
     }
