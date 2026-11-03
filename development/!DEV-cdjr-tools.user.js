@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.9
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.9
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.9
+// @version      5.10
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.10
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.10
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -13,12 +13,17 @@
 
     'use strict';
 
+    function getInventoryFilterState(search = window.location.search) {
+        const filterId = new URLSearchParams(search).get('filterid');
+        const match = filterId?.match(/^a9b([123]+)q0-10(s47Ex0|x0)-0-0(?:\s|$)/);
+        return { filterId, match };
+    }
+
     function createSearchBar() {
         if (document.getElementById('ocdj-search')) return;
 
-        const filterMatch = new URLSearchParams(window.location.search)
-            .get('filterid')
-            ?.match(/^a9b([123]+)q0-10(s47Ex0|x0)-0-0(?:\s|$)/);
+        const filterState = getInventoryFilterState(window.location.search);
+        const filterMatch = filterState.match;
         const urlCategoryIds = filterMatch ? new Set(filterMatch[1]) : null;
 
         const container = document.createElement('div');
@@ -121,6 +126,24 @@
 
         container.append(input, categoryGroup, localOnlyLabel, button);
         document.body.appendChild(container);
+
+        let lastObservedFilterId = filterState.filterId;
+        function syncFiltersFromUrl() {
+            const currentFilterState = getInventoryFilterState(window.location.search);
+            if (currentFilterState.filterId === lastObservedFilterId) return;
+            lastObservedFilterId = currentFilterState.filterId;
+            if (!currentFilterState.match) return;
+
+            const selectedCategoryIds = new Set(currentFilterState.match[1]);
+            categories.forEach(category => {
+                category.checkbox.checked = selectedCategoryIds.has(category.id);
+            });
+            localOnlyCheckbox.checked = currentFilterState.match[2] === 's47Ex0';
+        }
+
+        const filterObserver = new MutationObserver(syncFiltersFromUrl);
+        filterObserver.observe(document.body, { childList: true, subtree: true });
+        window.addEventListener('popstate', syncFiltersFromUrl);
         window.setTimeout(() => input.focus(), 250);
     }
 
