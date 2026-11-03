@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.7
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.7
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.7
+// @version      5.8
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.8
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.8
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -33,8 +33,8 @@
         categoryGroup.style.cssText = 'display:flex;align-items:center;gap:6px;';
         const categories = [
             { name: 'New', id: '3' },
-            { name: 'Used', id: '2' },
-            { name: 'Demo', id: '1' }
+            { name: 'Used', id: '1' },
+            { name: 'Demo', id: '2' }
         ].map(category => {
             const label = document.createElement('label');
             label.style.cssText = 'display:flex;align-items:center;gap:2px;';
