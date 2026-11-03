@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.12
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.12
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.12
+// @version      1.13
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.13
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.13
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -139,14 +139,13 @@
         return new Promise((resolve, reject) => {
             GM_xmlhttpRequest({
                 method: 'POST',
-                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent',
+                url: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent',
                 headers: {
                     'Content-Type': 'application/json',
                     'x-goog-api-key': apiKey
                 },
                 data: JSON.stringify({
-                    contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.3 }
+                    contents: [{ parts: [{ text: prompt }] }]
                 }),
                 timeout: 30000,
                 onload(response) {
@@ -321,9 +320,15 @@
                 hasRun = true;
                 copyButton.disabled = false;
                 downloadButton.disabled = false;
-                status.textContent = descriptionErrors.length || detailErrors.length
-                    ? `Processed ${vehicles.length} vehicles; ${descriptionErrors.length} descriptions and ${detailErrors.length} detail lookups failed.`
-                    : `Generated descriptions for ${vehicles.length} vehicles. Ready to export.`;
+                if (descriptionErrors.length || detailErrors.length) {
+                    const firstError = descriptionErrors[0] || detailErrors[0];
+                    status.textContent =
+                        `Processed ${vehicles.length} vehicles; ${descriptionErrors.length} descriptions and ${detailErrors.length} detail lookups failed.` +
+                        (firstError ? ` First error: ${firstError.message}` : '');
+                } else {
+                    status.textContent =
+                        `Generated descriptions for ${vehicles.length} vehicles. Ready to export.`;
+                }
             } finally {
                 runButton.disabled = false;
             }
