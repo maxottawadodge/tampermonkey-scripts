@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.8
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.8
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.8
+// @version      5.9
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.9
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.9
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -15,6 +15,11 @@
 
     function createSearchBar() {
         if (document.getElementById('ocdj-search')) return;
+
+        const filterMatch = new URLSearchParams(window.location.search)
+            .get('filterid')
+            ?.match(/^a9b([123]+)q0-10(s47Ex0|x0)-0-0(?:\s|$)/);
+        const urlCategoryIds = filterMatch ? new Set(filterMatch[1]) : null;
 
         const container = document.createElement('div');
         container.style.cssText =
@@ -41,7 +46,9 @@
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.checked = true;
+            checkbox.checked = urlCategoryIds
+                ? urlCategoryIds.has(category.id)
+                : true;
             label.append(checkbox, document.createTextNode(category.name));
             categoryGroup.appendChild(label);
 
@@ -52,7 +59,9 @@
         localOnlyLabel.style.cssText = 'display:flex;align-items:center;gap:2px;';
         const localOnlyCheckbox = document.createElement('input');
         localOnlyCheckbox.type = 'checkbox';
-        localOnlyCheckbox.checked = true;
+        localOnlyCheckbox.checked = filterMatch
+            ? filterMatch[2] === 's47Ex0'
+            : true;
         localOnlyCheckbox.setAttribute('aria-label', 'Local search only');
         localOnlyLabel.append(
             localOnlyCheckbox,
