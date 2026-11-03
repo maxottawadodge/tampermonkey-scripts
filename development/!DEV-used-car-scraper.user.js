@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.16
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.16
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.16
+// @version      1.17
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.17
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.17
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -18,23 +18,56 @@
     'use strict';
 
     const columns = [
+        ['Stock', vehicle => vehicle.stock],
         ['Name', vehicle => vehicle.name],
-        ['Price', vehicle => vehicle.price],
-        ['Mileage', vehicle => vehicle.mileage],
-        ['Description', vehicle => vehicle.description],
-        ['URL', vehicle => vehicle.url],
-        ['Stock Number', vehicle => vehicle.stock],
-        ['VIN', vehicle => vehicle.vin],
         ['Year', vehicle => vehicle.year],
         ['Make', vehicle => vehicle.make],
         ['Model', vehicle => vehicle.model],
-        ['Trim', vehicle => vehicle.trim],
+        ['Mileage', vehicle => vehicle.mileage],
+        ['Price', vehicle => vehicle.price],
+        ['Colour', vehicle => vehicle.colour],
         ['Fuel Type', vehicle => vehicle.fuelType],
-        ['Transmission Type', vehicle => vehicle.transmissionType]
+        ['Transmission', vehicle => vehicle.transmissionType],
+        ['Description', vehicle => vehicle.description],
+        ['Trim', vehicle => vehicle.trim],
+        ['VIN', vehicle => vehicle.vin]
+    ];
+
+    const exteriorColorOptions = [
+        ['Off white', /\b(off white|ivory|cream)\b/],
+        ['Charcoal', /\b(charcoal|graphite|gunmetal)\b/],
+        ['Burgundy', /\b(burgundy|maroon|wine)\b/],
+        ['Turquoise', /\b(turquoise|teal|aqua|aquamarine)\b/],
+        ['Beige', /\bbeige\b/],
+        ['Tan', /\btan\b/],
+        ['Silver', /\b(silver|billet|aluminum|aluminium)\b/],
+        ['Gray', /\b(gray|grey|granite|slate|pewter|steel)\b/],
+        ['Black', /\b(black|onyx|obsidian)\b/],
+        ['Blue', /\b(blue|navy|indigo)\b/],
+        ['Brown', /\b(brown|bronze|mocha|coffee)\b/],
+        ['Gold', /\b(gold|champagne)\b/],
+        ['Green', /\b(green|olive|forest)\b/],
+        ['Pink', /\bpink\b/],
+        ['Purple', /\b(purple|violet|plum)\b/],
+        ['Red', /\b(red|crimson|ruby|scarlet)\b/],
+        ['Orange', /\b(orange|copper)\b/],
+        ['White', /\bwhite\b/],
+        ['Yellow', /\b(yellow)\b/]
     ];
 
     function cleanText(value) {
         return (value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function normalizeExteriorColor(value) {
+        const color = cleanText(value)
+            .replace(/([a-z])([A-Z])/g, '$1 $2')
+            .toLowerCase()
+            .replace(/[^a-z]+/g, ' ')
+            .trim();
+        if (/\bblack forest green\b/.test(color)) return 'Green';
+        const match = exteriorColorOptions.find(([, pattern]) => pattern.test(color));
+        return match ? match[0] : 'Other';
     }
 
     function getPrice(card) {
@@ -81,6 +114,7 @@
                 url: key,
                 stock: cleanText(input.dataset.stockNumber),
                 vin: cleanText(input.dataset.vin).toUpperCase(),
+                colour: 'Other',
                 description: '',
                 descriptionBody: '',
                 fuelType: '',
@@ -104,6 +138,9 @@
         }
         const html = await response.text();
         const detailDocument = new DOMParser().parseFromString(html, 'text/html');
+        const exteriorColor = cleanText(
+            detailDocument.querySelector('.specsExtColor')?.textContent
+        ).replace(/^[^:]*:\s*/, '');
         return {
             fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
             transmissionType: getSpecValue(
@@ -111,6 +148,7 @@
                 'transmission',
                 'specsTransmission'
             ),
+            colour: normalizeExteriorColor(exteriorColor),
             descriptionBody: cleanText(
                 detailDocument.querySelector('.carDescriptionBody')?.textContent
             )
@@ -277,6 +315,7 @@
                 } catch (error) {
                     vehicle.fuelType = '';
                     vehicle.transmissionType = '';
+                    vehicle.colour = 'Other';
                     vehicle.descriptionBody = '';
                     detailErrors.push(error);
                     console.error('Could not scrape vehicle details', error);
