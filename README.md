@@ -1,20 +1,22 @@
 # Tampermonkey scripts
 
-This repository contains four Tampermonkey userscripts.
+This repository contains production and development Tampermonkey userscripts.
 
 ## Install
 
-- [CDJR tools](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js)
-- [DemandHub tools](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js)
-- [DealerSocket tools](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js)
-- [Global phone links](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js)
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js" target="_blank" rel="noopener noreferrer">CDJR tools</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js" target="_blank" rel="noopener noreferrer">DemandHub tools</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js" target="_blank" rel="noopener noreferrer">DealerSocket tools</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js" target="_blank" rel="noopener noreferrer">Global phone links</a>
 
 ## Development
 
-- [!DEV CDJR tools](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js)
-- [!DEV DemandHub tools](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js)
-- [!DEV DealerSocket tools](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js)
-- [!DEV Global phone links](https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js)
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js" target="_blank" rel="noopener noreferrer">!DEV CDJR tools</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js" target="_blank" rel="noopener noreferrer">!DEV DemandHub tools</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js" target="_blank" rel="noopener noreferrer">!DEV DealerSocket tools</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js" target="_blank" rel="noopener noreferrer">!DEV Global phone links</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js" target="_blank" rel="noopener noreferrer">!DEV Marketplace listing helper</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js" target="_blank" rel="noopener noreferrer">!DEV Used car scraper</a>
 
 Development scripts have `!DEV` names and separate update URLs so they can be
 installed alongside production scripts. Disable one environment when testing
