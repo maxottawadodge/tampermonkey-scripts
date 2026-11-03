@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.14
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.14
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.14
+// @version      1.15
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.15
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.15
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -183,7 +183,23 @@
                         reject(new Error('Gemini returned an empty description.'));
                         return;
                     }
-                    resolve(description);
+                    const price = vehicle.price
+                        ? `$${vehicle.price}`
+                        : 'Contact us for pricing';
+                    resolve([
+                        description,
+                        '',
+                        `Price: ${price} plus tax and licensing.`,
+                        '',
+                        'For more information or to schedule a test drive, contact us at:',
+                        '',
+                        'Ottawa St-Laurent Jeep & RAM',
+                        '900 St-Laurent Blvd, Ottawa, ON, K1K 3B3',
+                        'Call or text: (613) 683-9758',
+                        'ottawachryslerjeepdodge.com',
+                        '',
+                        'Ask for Max 😉'
+                    ].join('\n'));
                 },
                 onerror() {
                     reject(new Error('Could not connect to the Gemini API.'));
