@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.25
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.25
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.25
+// @version      1.26
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.26
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.26
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -19,10 +19,10 @@
 
     const columns = [
         ['Stock', vehicle => vehicle.stock],
-        ['Name', vehicle => vehicle.name],
         ['Year', vehicle => vehicle.year],
         ['Make', vehicle => vehicle.make],
         ['Model', vehicle => vehicle.model],
+        ['Trim', vehicle => vehicle.trim],
         ['Mileage', vehicle => vehicle.mileage],
         ['Price', vehicle => vehicle.price],
         ['Ext', vehicle => vehicle.exteriorColor],
@@ -32,7 +32,6 @@
         ['Fuel Type', vehicle => vehicle.fuelType],
         ['Transmission', vehicle => vehicle.transmissionType],
         ['Description', vehicle => vehicle.description],
-        ['Trim', vehicle => vehicle.trim],
         ['VIN', vehicle => vehicle.vin],
         ['Condition', vehicle => vehicle.condition],
         ['Scraped On', vehicle => vehicle.scrapedOn]
