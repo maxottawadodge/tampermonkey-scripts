@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.3
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.3
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.3
+// @version      1.4
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.4
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.4
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -174,16 +174,29 @@
         }) || null;
     }
 
-    function findOption(value, exactOnly) {
+    function findOption(value, exactOnly, combobox) {
         const target = normalize(value);
-        return [...document.querySelectorAll(
-            '[role="option"], [role="menuitem"], [role="radio"], button, [role="button"]'
-        )].find(option => {
-            if (!option.getClientRects().length) return false;
-            const text = normalize(option.textContent);
-            return text === target || (!exactOnly &&
-                (text.startsWith(`${target},`) || text.startsWith(`${target} `)));
-        }) || null;
+        const listboxId = combobox?.getAttribute('aria-controls') ||
+            combobox?.getAttribute('aria-owns');
+        const listbox = listboxId ? document.getElementById(listboxId) : null;
+        const selector =
+            '[role="option"], [role="menuitem"], [role="radio"], button, [role="button"]';
+        const options = listbox
+            ? [...listbox.querySelectorAll(selector)]
+            : [...document.querySelectorAll(selector)];
+        return options
+            .filter(option => !option.querySelector('[role="option"]'))
+            .find(option => {
+                if (!option.getClientRects().length) return false;
+                const text = normalize(option.innerText || option.textContent);
+                return text === target || (!exactOnly &&
+                    (text.startsWith(`${target},`) || text.startsWith(`${target} `)));
+            }) || null;
+    }
+
+    function getValueElement(element) {
+        if (element.matches('input, textarea, select')) return element;
+        return element.querySelector('input:not([type="hidden"]), textarea, select');
     }
 
     function setNativeValue(element, value) {
@@ -217,23 +230,38 @@
             element.getAttribute('role') === 'button') {
             element.click();
             await new Promise(resolve => window.setTimeout(resolve, 300));
-            const option = findOption(value, exactOption);
+            const option = findOption(value, exactOption, element);
             if (!option) return false;
             option.click();
             return true;
         }
 
-        const valueElement = element.matches('input, textarea, select')
-            ? element
-            : element.querySelector('input:not([type="hidden"]), textarea, select');
-        if (!valueElement || !setNativeValue(valueElement, value)) return false;
-        if (element.getAttribute('role') !== 'combobox') return true;
+        if (element.getAttribute('role') === 'combobox') {
+            const valueElement = getValueElement(element);
+            if (valueElement) {
+                if (!setNativeValue(valueElement, value)) return false;
+            } else {
+                element.click();
+            }
 
-        await new Promise(resolve => window.setTimeout(resolve, 300));
-        const option = findOption(value, exactOption);
-        if (!option) return false;
-        option.click();
-        return true;
+            for (let attempt = 0; attempt < 10; attempt++) {
+                await new Promise(resolve => window.setTimeout(resolve, 250));
+                const option = findOption(value, exactOption, element);
+                if (option) {
+                    option.click();
+                    return true;
+                }
+            }
+
+            element.dispatchEvent(new KeyboardEvent('keydown', {
+                key: 'Escape',
+                bubbles: true
+            }));
+            return false;
+        }
+
+        const valueElement = getValueElement(element);
+        return Boolean(valueElement && setNativeValue(valueElement, value));
     }
 
     async function fillVehicleForm(vehicle) {
