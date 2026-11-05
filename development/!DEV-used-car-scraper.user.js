@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.43
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.43
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.43
+// @version         1.44
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.44
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.44
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -582,6 +582,9 @@
             'background:#fff;border:1px solid #bbb;border-radius:6px;' +
             'box-shadow:0 2px 10px rgba(0,0,0,.2);font:13px Arial,sans-serif;';
 
+        const header = document.createElement('div');
+        header.style.cssText =
+            'display:flex;align-items:center;justify-content:flex-end;gap:6px;width:100%;';
         const toggleButton = document.createElement('button');
         toggleButton.type = 'button';
         toggleButton.textContent = 'Used car scraper ▸';
@@ -589,6 +592,10 @@
         toggleButton.style.cssText =
             'padding:6px 10px;border:0;border-radius:4px;' +
             'background:#2d6cdf;color:#fff;font-weight:600;cursor:pointer;';
+        const versionLabel = document.createElement('span');
+        versionLabel.textContent = 'v1.44';
+        versionLabel.style.cssText = 'color:#ddd;font-size:10px;';
+        header.append(toggleButton, versionLabel);
 
         const controls = document.createElement('div');
         controls.id = 'dev-used-car-scraper-controls';
@@ -608,16 +615,18 @@
         const statusArea = document.createElement('div');
         statusArea.setAttribute('aria-live', 'polite');
         statusArea.style.cssText =
-            'display:flex;flex-direction:column;align-items:stretch;gap:4px;' +
-            'text-align:right;width:100%;max-height:33vh;overflow-y:auto;' +
-            'overflow-x:hidden;min-width:0;overflow-wrap:anywhere;';
+            'display:flex;flex-direction:column;align-items:stretch;' +
+            'text-align:right;width:100%;max-height:80px;overflow-y:auto;' +
+            'overflow-x:hidden;min-width:0;overflow-wrap:anywhere;font-size:11px;color:#888;';
         const status = document.createElement('div');
         status.textContent = 'Ready.';
+        status.style.cssText =
+            'width:100%;text-align:right;min-width:0;overflow-wrap:anywhere;';
         const batchStatusList = document.createElement('div');
         batchStatusList.style.cssText =
-            'display:flex;flex-direction:column;align-items:stretch;gap:4px;width:100%;' +
-            'min-width:0;overflow-wrap:anywhere;';
-        statusArea.append(status, batchStatusList);
+            'display:flex;flex-direction:column;align-items:stretch;gap:2px;width:100%;' +
+            'min-width:0;overflow-wrap:anywhere;color:#888;font-size:11px;';
+        statusArea.appendChild(batchStatusList);
         const batchStatusRows = new Map();
         let vehicles = [];
         let hasRun = false;
@@ -646,9 +655,10 @@
             button.setAttribute('aria-label', `Retry batch ${batchNumber}`);
             button.title = `Retry batch ${batchNumber}`;
             button.style.cssText +=
-                'box-sizing:border-box;flex:0 0 36px;width:36px;height:36px;' +
-                'min-width:36px;padding:0;display:inline-flex;align-items:center;' +
-                'justify-content:center;line-height:1;font-size:22px;';
+                'box-sizing:border-box;flex:0 0 24px;width:24px;height:24px;' +
+                'min-width:24px;padding:0;display:inline-flex;align-items:center;' +
+                'justify-content:center;line-height:1;font-size:16px;' +
+                'background:#e5e5e5;color:#777;';
             return button;
         }
 
@@ -688,7 +698,7 @@
             const label = document.createElement('span');
             label.textContent = `Batch ${batchNumber}/${batchCount}: queued`;
             label.style.cssText =
-                'flex:1;min-width:0;overflow-wrap:anywhere;';
+                'flex:1;min-width:0;overflow-wrap:anywhere;color:#888;font-size:11px;';
             row.appendChild(label);
             batchStatusList.appendChild(row);
             const batchStatus = { row, label, retryButton: null };
@@ -1200,11 +1210,12 @@
             keyRow,
             keyControls,
             runRow,
+            status,
             statusArea,
             retryAllButton,
             exportRow
         );
-        panel.append(toggleButton, controls);
+        panel.append(header, controls);
         document.body.appendChild(panel);
     }
 
