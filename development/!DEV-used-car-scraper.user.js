@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.38
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.38
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.38
+// @version         1.39
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.39
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.39
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -393,19 +393,22 @@
             : 'Other';
     }
 
-    async function generateVehicleDescriptions(vehicles, apiKey) {
+    async function generateVehicleDescriptions(vehicles, apiKey, onStatus) {
         for (const vehicle of vehicles) {
             vehicle.bodyStyle = normalizeBodyStyle(vehicle.bodyStyle) || 'Other';
             if (vehicle.bodyStyle === 'Other') {
+                onStatus?.('resolvingBodyStyle');
                 try {
                     vehicle.bodyStyle = await generateBodyStyle(vehicle, apiKey);
                 } catch (error) {
                     vehicle.bodyStyle = 'Other';
                     console.warn('Could not determine vehicle body style; using Other.', error);
                 }
+                onStatus?.('waitingForDescription');
                 await new Promise(resolve =>
                     window.setTimeout(resolve, aiRequestDelayMs)
                 );
+                onStatus?.('generatingDescription');
             }
         }
 
@@ -519,7 +522,16 @@
             const batch = vehicles.slice(start, start + batchSize);
             onProgress('batch', batchNumber, batchCount, 'generating');
             try {
-                const descriptions = await generateVehicleDescriptions(batch, apiKey);
+                const descriptions = await generateVehicleDescriptions(
+                    batch,
+                    apiKey,
+                    progress => onProgress(
+                        'batch',
+                        batchNumber,
+                        batchCount,
+                        progress
+                    )
+                );
                 batch.forEach((vehicle, index) => {
                     vehicle.description = descriptions[index];
                 });
@@ -622,10 +634,22 @@
             return button;
         }
 
+        function makeRetryButton(batchNumber, handler) {
+            const button = makeButton('↻', handler);
+            button.setAttribute('aria-label', `Retry batch ${batchNumber}`);
+            button.title = `Retry batch ${batchNumber}`;
+            button.style.cssText +=
+                'box-sizing:border-box;flex:0 0 36px;width:36px;height:36px;' +
+                'min-width:36px;padding:0;display:inline-flex;align-items:center;' +
+                'justify-content:center;line-height:1;font-size:22px;';
+            return button;
+        }
+
         function makeRow() {
             const row = document.createElement('div');
             row.style.cssText =
-                'display:flex;align-items:center;justify-content:flex-end;gap:8px;width:100%;';
+                'display:flex;align-items:center;justify-content:flex-end;gap:8px;' +
+                'width:100%;min-width:0;';
             return row;
         }
 
@@ -637,6 +661,8 @@
             const row = makeRow();
             const label = document.createElement('span');
             label.textContent = `Batch ${batchNumber}/${batchCount}: queued`;
+            label.style.cssText =
+                'flex:1;min-width:0;overflow-wrap:anywhere;';
             row.appendChild(label);
             batchStatusList.appendChild(row);
             const batchStatus = { row, label, retryButton: null };
@@ -662,7 +688,21 @@
             batchStatus.retryButton.disabled = true;
             batchStatus.label.textContent = `Batch ${batchNumber}: retrying...`;
             try {
-                const descriptions = await generateVehicleDescriptions(batchVehicles, apiKey);
+                const descriptions = await generateVehicleDescriptions(
+                    batchVehicles,
+                    apiKey,
+                    phase => {
+                        const message = phase === 'resolvingBodyStyle'
+                            ? 'resolving body style with AI...'
+                            : phase === 'waitingForDescription'
+                                ? 'body style resolved; waiting before description...'
+                                : 'generating description...';
+                        batchStatus.label.textContent =
+                            `Batch ${batchNumber}: ${message}`;
+                        status.textContent =
+                            `Retrying batch ${batchNumber}: ${message}`;
+                    }
+                );
                 batchVehicles.forEach((vehicle, index) => {
                     vehicle.description = descriptions[index];
                 });
@@ -831,12 +871,23 @@
                         } else if (batchStatus === 'generating') {
                             row.label.textContent =
                                 `Batch ${completed}/${total}: generating descriptions...`;
+                        } else if (batchStatus === 'resolvingBodyStyle') {
+                            row.label.textContent =
+                                `Batch ${completed}/${total}: resolving body style with AI...`;
+                            status.textContent =
+                                `Batch ${completed}/${total}: resolving body style with AI...`;
+                        } else if (batchStatus === 'waitingForDescription') {
+                            row.label.textContent =
+                                `Batch ${completed}/${total}: body style resolved; waiting before description...`;
+                        } else if (batchStatus === 'generatingDescription') {
+                            row.label.textContent =
+                                `Batch ${completed}/${total}: generating description...`;
                         } else if (batchStatus === 'complete') {
                             row.label.textContent = `Batch ${completed}/${total}: complete`;
                         } else if (batchStatus === 'failed') {
                             row.label.textContent =
                                 `Batch ${completed}/${total}: failed - ${error.message}`;
-                            row.retryButton = makeButton('Retry', () =>
+                            row.retryButton = makeRetryButton(completed, () =>
                                 runBatchRetries([{
                                     number: completed,
                                     vehicles: batchVehicles,
