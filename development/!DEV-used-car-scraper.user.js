@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.30
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.30
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.30
+// @version      1.31
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.31
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.31
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -498,6 +498,7 @@
         let vehicles = [];
         let hasRun = false;
         let activeRetries = 0;
+        let retryAllButton;
 
         function makeButton(label, handler) {
             const button = document.createElement('button');
@@ -532,15 +533,23 @@
             return batchStatus;
         }
 
+        function updateRetryAllButton() {
+            const failedCount = [...batchStatusRows.values()]
+                .filter(batchStatus => batchStatus.retryButton)
+                .length;
+            retryAllButton.hidden = failedCount === 0;
+            retryAllButton.disabled = activeRetries > 0;
+            retryAllButton.textContent = failedCount > 0
+                ? `Retry All (${failedCount})`
+                : 'Retry All';
+        }
+
         async function retryBatch(batchNumber, batchVehicles, apiKey) {
             const batchStatus = batchStatusRows.get(batchNumber);
             if (!batchStatus) return;
 
             batchStatus.retryButton.disabled = true;
-            activeRetries++;
-            runButton.disabled = true;
             batchStatus.label.textContent = `Batch ${batchNumber}: retrying...`;
-            status.textContent = `Retrying batch ${batchNumber}...`;
             try {
                 const descriptions = await generateDescriptions(batchVehicles, apiKey);
                 batchVehicles.forEach((vehicle, index) => {
@@ -549,16 +558,43 @@
                 batchStatus.label.textContent = `Batch ${batchNumber}: complete`;
                 batchStatus.retryButton.remove();
                 batchStatus.retryButton = null;
-                status.textContent = `Batch ${batchNumber} retry succeeded. Ready to export.`;
             } catch (error) {
                 console.error(`Could not retry descriptions for batch ${batchNumber}`, error);
                 batchStatus.label.textContent =
                     `Batch ${batchNumber}: failed - ${error.message}`;
-                batchStatus.retryButton.disabled = false;
-                status.textContent = `Batch ${batchNumber} retry failed.`;
+            }
+        }
+
+        async function runBatchRetries(retries) {
+            if (activeRetries || !retries.length) return;
+
+            activeRetries++;
+            runButton.disabled = true;
+            updateRetryAllButton();
+            batchStatusRows.forEach(batchStatus => {
+                if (batchStatus.retryButton) batchStatus.retryButton.disabled = true;
+            });
+            status.textContent = retries.length === 1
+                ? `Retrying batch ${retries[0].number}...`
+                : `Retrying ${retries.length} failed batches...`;
+
+            try {
+                for (const retry of retries) {
+                    await retryBatch(retry.number, retry.vehicles, retry.apiKey);
+                }
+                const remaining = [...batchStatusRows.values()]
+                    .filter(batchStatus => batchStatus.retryButton)
+                    .length;
+                status.textContent = remaining
+                    ? `${remaining} batch${remaining === 1 ? '' : 'es'} still failed.`
+                    : 'All failed batches completed. Ready to export.';
             } finally {
                 activeRetries--;
-                runButton.disabled = activeRetries > 0;
+                runButton.disabled = false;
+                batchStatusRows.forEach(batchStatus => {
+                    if (batchStatus.retryButton) batchStatus.retryButton.disabled = false;
+                });
+                updateRetryAllButton();
             }
         }
 
@@ -570,6 +606,18 @@
         apiKeyInput.style.cssText =
             'box-sizing:border-box;width:180px;padding:7px 8px;' +
             'border:1px solid #bbb;border-radius:4px;';
+        retryAllButton = makeButton('Retry All', () => {
+            const retries = [...batchStatusRows.entries()]
+                .filter(([, batchStatus]) => batchStatus.retryButton)
+                .map(([number, batchStatus]) => ({
+                    number,
+                    vehicles: batchStatus.vehicles,
+                    apiKey: batchStatus.apiKey
+                }));
+            runBatchRetries(retries);
+        });
+        retryAllButton.hidden = true;
+
         const keyToggleButton = makeButton('', () => {
             const expanded = keyControls.hidden;
             keyControls.hidden = !expanded;
@@ -639,6 +687,7 @@
             hasRun = false;
             batchStatusRows.clear();
             batchStatusList.replaceChildren();
+            updateRetryAllButton();
             status.textContent = 'Finding vehicle listings...';
 
             try {
@@ -670,9 +719,16 @@
                             row.label.textContent =
                                 `Batch ${completed}/${total}: failed - ${error.message}`;
                             row.retryButton = makeButton('Retry', () =>
-                                retryBatch(completed, batchVehicles, apiKey)
+                                runBatchRetries([{
+                                    number: completed,
+                                    vehicles: batchVehicles,
+                                    apiKey
+                                }])
                             );
+                            row.vehicles = batchVehicles;
+                            row.apiKey = apiKey;
                             row.row.appendChild(row.retryButton);
+                            updateRetryAllButton();
                         } else {
                             row.label.textContent = `Batch ${completed}/${total}: queued`;
                         }
@@ -695,11 +751,13 @@
         const runRow = makeRow();
         runRow.appendChild(runButton);
 
+        let copyFeedbackTimeout;
         const copyButton = makeButton('Copy for Sheets', async () => {
             if (!hasRun || !vehicles.length) {
                 status.textContent = 'Click Run Scrape before exporting.';
                 return;
             }
+            window.clearTimeout(copyFeedbackTimeout);
             try {
                 await navigator.clipboard.writeText(
                     makeDelimitedText(
@@ -709,10 +767,15 @@
                         includeHeadersCheckbox.checked
                     )
                 );
+                copyButton.textContent = '✓ Copied';
+                copyFeedbackTimeout = window.setTimeout(() => {
+                    copyButton.textContent = 'Copy for Sheets';
+                }, 2000);
                 status.textContent =
                     `Copied ${vehicles.length} vehicles. Paste into Sheets.`;
             } catch (error) {
                 console.error('Could not copy vehicle data', error);
+                copyButton.textContent = 'Copy for Sheets';
                 status.textContent = 'Copy failed. Try Download CSV instead.';
             }
         });
@@ -748,6 +811,7 @@
             keyControls,
             runRow,
             statusArea,
+            retryAllButton,
             exportRow
         );
         panel.append(toggleButton, controls);
