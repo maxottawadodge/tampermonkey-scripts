@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.20
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.20
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.20
+// @version      1.21
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.21
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.21
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -329,7 +329,6 @@
     async function scrapeVehicles(vehicles, apiKey, onProgress) {
         let nextIndex = 0;
         let detailCompleted = 0;
-        const descriptionErrors = [];
         const detailErrors = [];
         onProgress('details', 0, vehicles.length);
 
@@ -359,40 +358,33 @@
 
         const batchSize = 6;
         const batchCount = Math.ceil(vehicles.length / batchSize);
+        const failedBatches = [];
         for (let start = 0; start < vehicles.length; start += batchSize) {
             const batchNumber = Math.floor(start / batchSize) + 1;
             if (batchNumber > 1) {
-                onProgress('waiting', start, vehicles.length, batchNumber, batchCount);
+                onProgress('batch', batchNumber, batchCount, 'waiting');
                 await new Promise(resolve => window.setTimeout(resolve, 2000));
             }
 
             const batch = vehicles.slice(start, start + batchSize);
-            onProgress('generating', start, vehicles.length, batchNumber, batchCount);
+            onProgress('batch', batchNumber, batchCount, 'generating');
             try {
                 const descriptions = await generateDescriptions(batch, apiKey);
                 batch.forEach((vehicle, index) => {
                     vehicle.description = descriptions[index];
                 });
+                onProgress('batch', batchNumber, batchCount, 'complete');
             } catch (error) {
                 batch.forEach(vehicle => {
                     vehicle.description = '';
-                    descriptionErrors.push(error);
-                    console.error(
-                        `Could not generate description for ${vehicle.url}`,
-                        error
-                    );
                 });
+                failedBatches.push({ number: batchNumber, vehicles: batch, error });
+                console.error(`Could not generate descriptions for batch ${batchNumber}`, error);
+                onProgress('batch', batchNumber, batchCount, 'failed', error);
             }
-            onProgress(
-                'descriptions',
-                start + batch.length,
-                vehicles.length,
-                batchNumber,
-                batchCount
-            );
         }
 
-        return { descriptionErrors, detailErrors };
+        return { failedBatches, detailErrors };
     }
 
     function makeDelimitedText(vehicles, delimiter, quoteValues, includeHeaders = false) {
@@ -438,19 +430,32 @@
         controls.id = 'dev-used-car-scraper-controls';
         controls.hidden = true;
         controls.style.cssText =
-            'display:none;align-items:center;flex-wrap:wrap;gap:8px;' +
+            'display:none;flex-direction:column;align-items:flex-end;gap:8px;' +
             'max-width:calc(100vw - 72px);';
         toggleButton.setAttribute('aria-controls', controls.id);
 
         let savedApiKey = String(GM_getValue('geminiApiKey', '')).trim();
-        const status = document.createElement('span');
-        status.setAttribute('aria-live', 'polite');
-        status.style.cssText = 'flex:0 0 100%;';
-        status.textContent = savedApiKey
+        const instructions = document.createElement('div');
+        instructions.setAttribute('aria-live', 'polite');
+        instructions.style.cssText = 'text-align:right;';
+        instructions.textContent = savedApiKey
             ? 'Gemini API key ready. Click Run Scrape.'
             : 'Add a Gemini API key, then click Run Scrape.';
+        const statusArea = document.createElement('div');
+        statusArea.setAttribute('aria-live', 'polite');
+        statusArea.style.cssText =
+            'display:flex;flex-direction:column;align-items:flex-end;gap:4px;' +
+            'text-align:right;width:100%;';
+        const status = document.createElement('div');
+        status.textContent = 'Ready.';
+        const batchStatusList = document.createElement('div');
+        batchStatusList.style.cssText =
+            'display:flex;flex-direction:column;align-items:flex-end;gap:4px;width:100%;';
+        statusArea.append(status, batchStatusList);
+        const batchStatusRows = new Map();
         let vehicles = [];
         let hasRun = false;
+        let activeRetries = 0;
 
         function makeButton(label, handler) {
             const button = document.createElement('button');
@@ -461,6 +466,58 @@
                 'background:#2d6cdf;color:#fff;font-weight:600;cursor:pointer;';
             button.addEventListener('click', handler);
             return button;
+        }
+
+        function makeRow() {
+            const row = document.createElement('div');
+            row.style.cssText =
+                'display:flex;align-items:center;justify-content:flex-end;gap:8px;width:100%;';
+            return row;
+        }
+
+        function getBatchStatusRow(batchNumber, batchCount) {
+            if (batchStatusRows.has(batchNumber)) {
+                return batchStatusRows.get(batchNumber);
+            }
+
+            const row = makeRow();
+            const label = document.createElement('span');
+            label.textContent = `Batch ${batchNumber}/${batchCount}: queued`;
+            row.appendChild(label);
+            batchStatusList.appendChild(row);
+            const batchStatus = { row, label, retryButton: null };
+            batchStatusRows.set(batchNumber, batchStatus);
+            return batchStatus;
+        }
+
+        async function retryBatch(batchNumber, batchVehicles, apiKey) {
+            const batchStatus = batchStatusRows.get(batchNumber);
+            if (!batchStatus) return;
+
+            batchStatus.retryButton.disabled = true;
+            activeRetries++;
+            runButton.disabled = true;
+            batchStatus.label.textContent = `Batch ${batchNumber}: retrying...`;
+            status.textContent = `Retrying batch ${batchNumber}...`;
+            try {
+                const descriptions = await generateDescriptions(batchVehicles, apiKey);
+                batchVehicles.forEach((vehicle, index) => {
+                    vehicle.description = descriptions[index];
+                });
+                batchStatus.label.textContent = `Batch ${batchNumber}: complete`;
+                batchStatus.retryButton.remove();
+                batchStatus.retryButton = null;
+                status.textContent = `Batch ${batchNumber} retry succeeded. Ready to export.`;
+            } catch (error) {
+                console.error(`Could not retry descriptions for batch ${batchNumber}`, error);
+                batchStatus.label.textContent =
+                    `Batch ${batchNumber}: failed - ${error.message}`;
+                batchStatus.retryButton.disabled = false;
+                status.textContent = `Batch ${batchNumber} retry failed.`;
+            } finally {
+                activeRetries--;
+                runButton.disabled = activeRetries > 0;
+            }
         }
 
         const apiKeyInput = document.createElement('input');
@@ -498,7 +555,7 @@
             GM_setValue('geminiApiKey', apiKey);
             apiKeyInput.value = '';
             savedApiKey = apiKey;
-            status.textContent = savedApiKey
+            instructions.textContent = savedApiKey
                 ? 'Gemini API key saved in Tampermonkey.'
                 : 'Gemini API key cleared.';
             keyControls.hidden = Boolean(savedApiKey);
@@ -506,6 +563,8 @@
             updateKeyToggle();
         });
         keyControls.append(apiKeyInput, saveKeyButton);
+        const keyRow = makeRow();
+        keyRow.appendChild(keyToggleButton);
         toggleButton.addEventListener('click', () => {
             const expanded = toggleButton.getAttribute('aria-expanded') !== 'true';
             toggleButton.setAttribute('aria-expanded', String(expanded));
@@ -513,6 +572,17 @@
             controls.hidden = !expanded;
             controls.style.display = expanded ? 'flex' : 'none';
         });
+
+        const includeHeadersCheckbox = document.createElement('input');
+        includeHeadersCheckbox.type = 'checkbox';
+        includeHeadersCheckbox.checked = false;
+        const includeHeadersLabel = document.createElement('label');
+        includeHeadersLabel.style.cssText =
+            'display:flex;align-items:center;gap:4px;cursor:pointer;';
+        includeHeadersLabel.append(includeHeadersCheckbox, 'Include headers');
+
+        const exportRow = makeRow();
+        exportRow.append(includeHeadersLabel);
 
         const runButton = makeButton('Run Scrape', async () => {
             const apiKey = String(GM_getValue('geminiApiKey', '')).trim();
@@ -524,50 +594,64 @@
             runButton.disabled = true;
             copyButton.disabled = true;
             downloadButton.disabled = true;
+            hasRun = false;
+            batchStatusRows.clear();
+            batchStatusList.replaceChildren();
             status.textContent = 'Finding vehicle listings...';
-            vehicles = getVehicleCards();
-            if (!vehicles.length) {
-                status.textContent = 'No vehicle listings found on this page.';
-                runButton.disabled = false;
-                return;
-            }
 
             try {
-                const { descriptionErrors, detailErrors } = await scrapeVehicles(
+                vehicles = getVehicleCards();
+                if (!vehicles.length) {
+                    status.textContent = 'No vehicle listings found on this page.';
+                    return;
+                }
+
+                const { failedBatches, detailErrors } = await scrapeVehicles(
                     vehicles,
                     apiKey,
-                    (phase, completed, total, batchNumber, batchCount) => {
-                        if (phase === 'waiting') {
-                            status.textContent =
-                                `Batch ${batchNumber - 1}/${batchCount} complete. Waiting 2 seconds...`;
-                        } else if (phase === 'details') {
-                            status.textContent =
-                                `Loading vehicle details: ${completed}/${total}`;
-                        } else if (phase === 'generating') {
-                            status.textContent =
-                                `Generating descriptions: ${completed}/${total} (batch ${batchNumber}/${batchCount})`;
+                    (phase, completed, total, batchStatus, error, batchVehicles) => {
+                        if (phase === 'details') {
+                            status.textContent = `Loading vehicle details: ${completed}/${total}`;
+                            return;
+                        }
+
+                        const row = getBatchStatusRow(completed, total);
+                        if (batchStatus === 'waiting') {
+                            row.label.textContent =
+                                `Batch ${completed}/${total}: waiting 2 seconds...`;
+                        } else if (batchStatus === 'generating') {
+                            row.label.textContent =
+                                `Batch ${completed}/${total}: generating descriptions...`;
+                        } else if (batchStatus === 'complete') {
+                            row.label.textContent = `Batch ${completed}/${total}: complete`;
+                        } else if (batchStatus === 'failed') {
+                            row.label.textContent =
+                                `Batch ${completed}/${total}: failed - ${error.message}`;
+                            row.retryButton = makeButton('Retry', () =>
+                                retryBatch(completed, batchVehicles, apiKey)
+                            );
+                            row.row.appendChild(row.retryButton);
                         } else {
-                            status.textContent =
-                                `Generating descriptions: ${completed}/${total} (batch ${batchNumber}/${batchCount})`;
+                            row.label.textContent = `Batch ${completed}/${total}: queued`;
                         }
                     }
                 );
                 hasRun = true;
                 copyButton.disabled = false;
                 downloadButton.disabled = false;
-                if (descriptionErrors.length || detailErrors.length) {
-                    const firstError = descriptionErrors[0] || detailErrors[0];
+                if (failedBatches.length || detailErrors.length) {
                     status.textContent =
-                        `Processed ${vehicles.length} vehicles; ${descriptionErrors.length} descriptions and ${detailErrors.length} detail lookups failed.` +
-                        (firstError ? ` First error: ${firstError.message}` : '');
+                        `Processed ${vehicles.length} vehicles; ${failedBatches.length} batches and ${detailErrors.length} detail lookups failed. Retry failed batches above.`;
                 } else {
                     status.textContent =
                         `Generated descriptions for ${vehicles.length} vehicles. Ready to export.`;
                 }
             } finally {
-                runButton.disabled = false;
+                runButton.disabled = activeRetries > 0;
             }
         });
+        const runRow = makeRow();
+        runRow.appendChild(runButton);
 
         const copyButton = makeButton('Copy for Sheets', async () => {
             if (!hasRun || !vehicles.length) {
@@ -615,21 +699,14 @@
         });
         copyButton.disabled = true;
         downloadButton.disabled = true;
-        const includeHeadersCheckbox = document.createElement('input');
-        includeHeadersCheckbox.type = 'checkbox';
-        includeHeadersCheckbox.checked = false;
-        const includeHeadersLabel = document.createElement('label');
-        includeHeadersLabel.style.cssText =
-            'display:flex;align-items:center;gap:4px;cursor:pointer;';
-        includeHeadersLabel.append(includeHeadersCheckbox, 'Include headers');
+        exportRow.append(copyButton, downloadButton);
         controls.append(
-            status,
-            keyToggleButton,
+            instructions,
+            keyRow,
             keyControls,
-            runButton,
-            includeHeadersLabel,
-            copyButton,
-            downloadButton
+            runRow,
+            statusArea,
+            exportRow
         );
         panel.append(toggleButton, controls);
         document.body.appendChild(panel);
