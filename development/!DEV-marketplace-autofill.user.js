@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.9
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.9
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.9
+// @version      1.10
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.10
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.10
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -38,9 +38,6 @@
         'Condition',
         'Scraped On'
     ];
-    const legacyScraperHeaders = scraperHeaders.filter(header =>
-        header !== 'Body Style' && header !== 'Vehicle Type'
-    );
     const previousScraperHeaders = scraperHeaders.filter(header =>
         header !== 'Vehicle Type'
     );
@@ -144,15 +141,13 @@
             const dataRow = trimTrailingEmptyCells(rows[0]);
             const rowHeaders = dataRow.length === previousScraperHeaders.length
                 ? previousScraperHeaders
-                : dataRow.length === legacyScraperHeaders.length
-                    ? legacyScraperHeaders
-                    : scraperHeaders;
+                : scraperHeaders;
             if (
                 rows.length !== 1 ||
                 dataRow.length !== rowHeaders.length
             ) {
                 throw new Error(
-                    `Copy one complete scraper row (${scraperHeaders.length} columns, ${previousScraperHeaders.length} from the previous scraper, or ${legacyScraperHeaders.length} from an older scraper), without the header.`
+                    `Copy one complete scraper row (${scraperHeaders.length} columns, or ${previousScraperHeaders.length} from the previous scraper), without the header.`
                 );
             }
             values = Object.fromEntries(
@@ -167,8 +162,8 @@
             location: 'Ottawa, Ontario',
             year: values.Year.trim(),
             make: values.Make.trim(),
-            model: values.Model.trim(),
-            trim: values.Trim.trim(),
+            model: [values.Model, values.Trim].map(value => value.trim())
+                .filter(Boolean).join(' '),
             bodyStyle: (values['Body Style'] || '').trim(),
             mileage: values.Mileage.replace(/\D/g, ''),
             price: values.Price.replace(/[^\d.]/g, ''),
@@ -295,6 +290,14 @@
         return element.value === value;
     }
 
+    function priceMatches(value, expected) {
+        const actualPrice = Number(String(value).replace(/[^\d.-]/g, ''));
+        const expectedPrice = Number(expected);
+        return Number.isFinite(actualPrice) &&
+            Number.isFinite(expectedPrice) &&
+            actualPrice === expectedPrice;
+    }
+
     async function fillField(element, value, exactOption) {
         if (element instanceof HTMLButtonElement ||
             element.getAttribute('role') === 'button') {
@@ -353,7 +356,6 @@
             ['Year', ['year'], vehicle.year],
             ['Make', ['make'], vehicle.make],
             ['Model', ['model'], vehicle.model],
-            ['Trim', ['trim'], vehicle.trim],
             ['Body style', ['body style'], vehicle.bodyStyle, true],
             ['Exterior color', ['exterior color'], vehicle.exteriorColor],
             ['Interior color', ['interior color'], vehicle.interiorColor],
@@ -368,7 +370,12 @@
         for (const [label, aliases, value, exactOption = false] of fields) {
             if (!value) continue;
             const element = findField(label, aliases);
-            if (!element || !await fillField(element, value, exactOption)) {
+            const filled = element &&
+                await fillField(element, value, exactOption);
+            const priceWasFormatted = label === 'Price' &&
+                element &&
+                priceMatches(getValueElement(element)?.value || '', value);
+            if (!filled && !priceWasFormatted) {
                 failed.push(label);
             } else {
                 filledCount++;
