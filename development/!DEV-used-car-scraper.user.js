@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.35
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.35
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.35
+// @version      1.36
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.36
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.36
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -18,6 +18,9 @@
     'use strict';
 
     const columns = [
+        ['Status', () => ''],
+        ['Listed On', () => ''],
+        ['Sold On', () => ''],
         ['Stock', vehicle => vehicle.stock],
         ['URL', vehicle => vehicle.url],
         ['Year', vehicle => vehicle.year],
@@ -253,7 +256,10 @@
         const vehicleDetails = vehicles.map((vehicle, index) => {
             const fields = columns
                 .filter(([label]) =>
-                    !['Stock', 'URL', 'Ext', 'Int', 'Description', 'Scraped On'].includes(label)
+                    ![
+                        'Status', 'Listed On', 'Sold On', 'Stock', 'URL',
+                        'Ext', 'Int', 'Description', 'Scraped On'
+                    ].includes(label)
                 )
                 .map(([label, getValue]) => [
                     label === 'Mileage' ? 'KMs' :
