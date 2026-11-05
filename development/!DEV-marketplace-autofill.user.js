@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.10
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.10
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.10
+// @version      1.11
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.11
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.11
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -38,9 +38,6 @@
         'Condition',
         'Scraped On'
     ];
-    const previousScraperHeaders = scraperHeaders.filter(header =>
-        header !== 'Vehicle Type'
-    );
     const fuelTypes = [
         'Diesel',
         'Electric',
@@ -58,6 +55,7 @@
 
     function normalizeFuelType(value) {
         const normalized = normalize(value);
+        if (normalized === 'gas') return 'Gasoline';
         return fuelTypes.find(option => normalize(option) === normalized) ||
             (normalized ? 'Other' : '');
     }
@@ -122,8 +120,11 @@
                 throw new Error('Copy exactly one vehicle row, with its header row if included.');
             }
             const dataRow = trimTrailingEmptyCells(rows[1]);
-            if (dataRow.length > headerRow.length) {
-                throw new Error('The copied row has non-empty cells beyond its headers.');
+            if (
+                headerRow.length !== scraperHeaders.length ||
+                dataRow.length !== scraperHeaders.length
+            ) {
+                throw new Error('Copy exactly one 23-column scraper row, with its header row.');
             }
             const headerIndexes = new Map(
                 headerRow.map((header, index) => [normalize(header), index])
@@ -139,19 +140,14 @@
             );
         } else {
             const dataRow = trimTrailingEmptyCells(rows[0]);
-            const rowHeaders = dataRow.length === previousScraperHeaders.length
-                ? previousScraperHeaders
-                : scraperHeaders;
             if (
                 rows.length !== 1 ||
-                dataRow.length !== rowHeaders.length
+                dataRow.length !== scraperHeaders.length
             ) {
-                throw new Error(
-                    `Copy one complete scraper row (${scraperHeaders.length} columns, or ${previousScraperHeaders.length} from the previous scraper), without the header.`
-                );
+                throw new Error('Copy exactly one 23-column scraper row without the header.');
             }
             values = Object.fromEntries(
-                rowHeaders.map((header, index) => [header, dataRow[index] || ''])
+                scraperHeaders.map((header, index) => [header, dataRow[index] || ''])
             );
         }
 
@@ -208,8 +204,8 @@
         }) || null;
     }
 
-    function findOption(value, exactOnly, combobox) {
-        const target = normalize(value);
+    function findOption(value, exactOnly, combobox, aliases = []) {
+        const targets = [value, ...aliases].map(normalize);
         const listboxId = combobox?.getAttribute('aria-controls') ||
             combobox?.getAttribute('aria-owns');
         const listbox = listboxId ? document.getElementById(listboxId) : null;
@@ -223,8 +219,10 @@
             .find(option => {
                 if (!option.getClientRects().length) return false;
                 const text = normalize(option.innerText || option.textContent);
-                return text === target || (!exactOnly &&
-                    (text.startsWith(`${target},`) || text.startsWith(`${target} `)));
+                return targets.some(target =>
+                    text === target || (!exactOnly &&
+                        (text.startsWith(`${target},`) || text.startsWith(`${target} `)))
+                );
             }) || null;
     }
 
@@ -264,11 +262,12 @@
         return element.getAttribute('aria-checked') === 'true';
     }
 
-    function setNativeValue(element, value) {
+    function setNativeValue(element, value, aliases = []) {
         if (element instanceof HTMLSelectElement) {
+            const targets = [value, ...aliases].map(normalize);
             const option = [...element.options].find(item =>
-                normalize(item.textContent) === normalize(value) ||
-                normalize(item.value) === normalize(value)
+                targets.includes(normalize(item.textContent)) ||
+                targets.includes(normalize(item.value))
             );
             if (!option) return false;
             element.value = option.value;
@@ -287,7 +286,8 @@
         }
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
-        return element.value === value;
+        return element.value === value ||
+            aliases.some(alias => normalize(element.value) === normalize(alias));
     }
 
     function priceMatches(value, expected) {
@@ -298,12 +298,12 @@
             actualPrice === expectedPrice;
     }
 
-    async function fillField(element, value, exactOption) {
+    async function fillField(element, value, exactOption, optionAliases = []) {
         if (element instanceof HTMLButtonElement ||
             element.getAttribute('role') === 'button') {
             element.click();
             await new Promise(resolve => window.setTimeout(resolve, 300));
-            const option = findOption(value, exactOption, element);
+            const option = findOption(value, exactOption, element, optionAliases);
             if (!option) return false;
             option.click();
             return true;
@@ -312,14 +312,14 @@
         if (element.getAttribute('role') === 'combobox') {
             const valueElement = getValueElement(element);
             if (valueElement) {
-                if (!setNativeValue(valueElement, value)) return false;
+                if (!setNativeValue(valueElement, value, optionAliases)) return false;
             } else {
                 element.click();
             }
 
             for (let attempt = 0; attempt < 10; attempt++) {
                 await new Promise(resolve => window.setTimeout(resolve, 250));
-                const option = findOption(value, exactOption, element);
+                const option = findOption(value, exactOption, element, optionAliases);
                 if (option) {
                     option.click();
                     return true;
@@ -334,7 +334,7 @@
         }
 
         const valueElement = getValueElement(element);
-        return Boolean(valueElement && setNativeValue(valueElement, value));
+        return Boolean(valueElement && setNativeValue(valueElement, value, optionAliases));
     }
 
     async function fillVehicleForm(vehicle) {
@@ -362,16 +362,28 @@
             ['Mileage', ['mileage', 'odometer'], vehicle.mileage],
             ['Price', ['price'], vehicle.price],
             ['Condition', ['condition', 'vehicle condition'], vehicle.condition, true],
-            ['Fuel type', ['fuel type', 'fuel'], vehicle.fuelType, true],
+            [
+                'Fuel type',
+                ['fuel type', 'fuel'],
+                vehicle.fuelType,
+                true,
+                vehicle.fuelType === 'Gasoline' ? ['Gas'] : []
+            ],
             ['Transmission', ['transmission', 'transmission type'], vehicle.transmission],
             ['Description', ['description'], vehicle.description]
         ];
 
-        for (const [label, aliases, value, exactOption = false] of fields) {
+        for (const [
+            label,
+            aliases,
+            value,
+            exactOption = false,
+            optionAliases = []
+        ] of fields) {
             if (!value) continue;
             const element = findField(label, aliases);
             const filled = element &&
-                await fillField(element, value, exactOption);
+                await fillField(element, value, exactOption, optionAliases);
             const priceWasFormatted = label === 'Price' &&
                 element &&
                 priceMatches(getValueElement(element)?.value || '', value);
