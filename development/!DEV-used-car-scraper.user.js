@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.45
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.45
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.45
+// @version         1.46
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.46
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.46
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -67,6 +67,7 @@
     const bodyStyleOptions = [
         'Coupe',
         'Truck',
+        'Commercial Van',
         'Sedan',
         'Hatchback',
         'SUV',
@@ -120,6 +121,7 @@
         const matches = [
             ['Coupe', /\bcoupes?\b/],
             ['Truck', /\b(pickups?|trucks?)\b/],
+            ['Commercial Van', /\bcommercial vans?\b/],
             ['Sedan', /\bsedans?\b/],
             ['Hatchback', /\bhatchbacks?\b/],
             ['SUV', /\b(suvs?|sport utility vehicles?|crossovers?|cuvs?)\b/],
@@ -240,12 +242,11 @@
             'bodyType',
             'specsBodyType'
         );
-        const isCommercial = /\bcommercial\b/i.test(sourceBodyStyle);
         return {
-            vehicleType: isCommercial ? 'Commercial/Industrial' : 'Car/Truck',
-            bodyStyle: isCommercial
-                ? sourceBodyStyle
-                : normalizeBodyStyle(sourceBodyStyle) || 'Other',
+            vehicleType: /\bcommercial\b/i.test(sourceBodyStyle)
+                ? 'Commercial/Industrial'
+                : 'Car/Truck',
+            bodyStyle: normalizeBodyStyle(sourceBodyStyle) || 'Other',
             fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
             transmissionType: getSpecValue(
                 detailDocument,
@@ -405,7 +406,6 @@
 
     async function generateVehicleDescriptions(vehicles, apiKey, onStatus) {
         for (const vehicle of vehicles) {
-            if (vehicle.vehicleType === 'Commercial/Industrial') continue;
             vehicle.bodyStyle = normalizeBodyStyle(vehicle.bodyStyle) || 'Other';
             if (vehicle.bodyStyle === 'Other') {
                 onStatus?.('resolvingBodyStyle');
