@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.22
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.22
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.22
+// @version      1.23
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.23
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.23
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -25,8 +25,10 @@
         ['Model', vehicle => vehicle.model],
         ['Mileage', vehicle => vehicle.mileage],
         ['Price', vehicle => vehicle.price],
-        ['Exterior', vehicle => vehicle.exteriorColor],
-        ['Interior', vehicle => vehicle.interiorColor],
+        ['Ext', vehicle => vehicle.exteriorColor],
+        ['Ext Long', vehicle => vehicle.exteriorColorLong],
+        ['Int', vehicle => vehicle.interiorColor],
+        ['Int Long', vehicle => vehicle.interiorColorLong],
         ['Fuel Type', vehicle => vehicle.fuelType],
         ['Transmission', vehicle => vehicle.transmissionType],
         ['Description', vehicle => vehicle.description],
@@ -137,7 +139,9 @@
                 condition: getCondition(key),
                 scrapedOn,
                 exteriorColor: 'Other',
+                exteriorColorLong: '',
                 interiorColor: 'Other',
+                interiorColorLong: '',
                 description: '',
                 descriptionBody: '',
                 fuelType: '',
@@ -161,12 +165,18 @@
         }
         const html = await response.text();
         const detailDocument = new DOMParser().parseFromString(html, 'text/html');
-        const exteriorColor = cleanText(
+        const exteriorColorLong = cleanText(
             detailDocument.getElementById('orig-color-tt')?.textContent
         ).replace(/^[^:]*:\s*/, '');
-        const interiorColor = cleanText(
+        const interiorColorLong = cleanText(
             detailDocument.getElementById('orig-int-color-tt')?.textContent
         ).replace(/^[^:]*:\s*/, '');
+        const exteriorColor = cleanText(
+            detailDocument.querySelector('[data-popper="orig-color-tt"]')?.textContent
+        ).replace(/^Ext:\s*/i, '').trim();
+        const interiorColor = cleanText(
+            detailDocument.querySelector('[data-popper="orig-int-color-tt"]')?.textContent
+        ).replace(/^Int:\s*/i, '').trim();
         return {
             fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
             transmissionType: getSpecValue(
@@ -175,7 +185,9 @@
                 'specsTransmission'
             ),
             exteriorColor: normalizeColor(exteriorColor),
+            exteriorColorLong,
             interiorColor: normalizeColor(interiorColor),
+            interiorColorLong,
             descriptionBody: cleanText(
                 detailDocument.querySelector('.carDescriptionBody')?.textContent
             )
@@ -206,7 +218,11 @@
         const vehicleDetails = vehicles.map((vehicle, index) => {
             const fields = columns
                 .filter(([label]) => label !== 'Description')
-                .map(([label, getValue]) => [label, getValue(vehicle)])
+                .map(([label, getValue]) => [
+                    label === 'Ext Long' ? 'Exterior Color' :
+                        label === 'Int Long' ? 'Interior Color' : label,
+                    getValue(vehicle)
+                ])
                 .filter(([, value]) => value)
                 .map(([label, value]) => `${label}: ${value}`)
                 .join('\n');
@@ -342,7 +358,9 @@
                     vehicle.fuelType = '';
                     vehicle.transmissionType = '';
                     vehicle.exteriorColor = 'Other';
+                    vehicle.exteriorColorLong = '';
                     vehicle.interiorColor = 'Other';
+                    vehicle.interiorColorLong = '';
                     vehicle.descriptionBody = '';
                     detailErrors.push(error);
                     console.error('Could not scrape vehicle details', error);
