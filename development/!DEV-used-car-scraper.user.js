@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.28
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.28
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.28
+// @version      1.29
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.29
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.29
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -398,14 +398,14 @@
             Array.from({ length: Math.min(3, vehicles.length) }, () => worker())
         );
 
-        const batchSize = 6;
+        const batchSize = 1;
         const batchCount = Math.ceil(vehicles.length / batchSize);
         const failedBatches = [];
         for (let start = 0; start < vehicles.length; start += batchSize) {
             const batchNumber = Math.floor(start / batchSize) + 1;
             if (batchNumber > 1) {
                 onProgress('batch', batchNumber, batchCount, 'waiting');
-                await new Promise(resolve => window.setTimeout(resolve, 2000));
+                await new Promise(resolve => window.setTimeout(resolve, 1000));
             }
 
             const batch = vehicles.slice(start, start + batchSize);
@@ -660,7 +660,7 @@
                         const row = getBatchStatusRow(completed, total);
                         if (batchStatus === 'waiting') {
                             row.label.textContent =
-                                `Batch ${completed}/${total}: waiting 2 seconds...`;
+                                `Batch ${completed}/${total}: waiting 1 second...`;
                         } else if (batchStatus === 'generating') {
                             row.label.textContent =
                                 `Batch ${completed}/${total}: generating descriptions...`;
