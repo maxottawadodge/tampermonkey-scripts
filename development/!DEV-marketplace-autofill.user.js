@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.2
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.2
+// @version      1.3
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.3
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.3
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -237,8 +237,20 @@
     }
 
     async function fillVehicleForm(vehicle) {
+        const failed = [];
+        let filledCount = 0;
+        const vehicleTypeField = findField(
+            'Vehicle type',
+            ['vehicle type', 'category']
+        );
+        if (vehicleTypeField &&
+            await fillField(vehicleTypeField, 'Car/Truck', false)) {
+            filledCount++;
+        } else {
+            failed.push('Vehicle type');
+        }
+
         const fields = [
-            ['Vehicle type', ['vehicle type', 'category'], vehicle.vehicleType],
             ['Location', ['location'], vehicle.location],
             ['Year', ['year'], vehicle.year],
             ['Make', ['make'], vehicle.make],
@@ -251,8 +263,6 @@
             ['Transmission', ['transmission', 'transmission type'], vehicle.transmission],
             ['Description', ['description'], vehicle.description]
         ];
-        const failed = [];
-        let filledCount = 0;
 
         for (const [label, aliases, value, exactOption = false] of fields) {
             if (!value) continue;
