@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.40
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.40
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.40
+// @version         1.41
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.41
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.41
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -121,10 +121,10 @@
             ['Truck', /\b(pickup|truck)\b/],
             ['Sedan', /\bsedan\b/],
             ['Hatchback', /\bhatchback\b/],
-            ['SUV', /\b(suv|sport utility|crossover)\b/],
+            ['SUV', /\b(suv|sport utility|crossover|cuv)\b/],
             ['Convertible', /\b(convertible|cabriolet|roadster)\b/],
             ['Wagon', /\b(wagon|estate)\b/],
-            ['Minivan', /\b(minivan|mini van)\b/],
+            ['Minivan', /\b(minivan|mini van|passenger van|cargo van)\b/],
             ['Small Car', /\b(compact car|subcompact car|small car|city car)\b/]
         ];
         return matches.find(([, pattern]) => pattern.test(style))?.[0] || '';
@@ -209,7 +209,8 @@
 
     function getSpecValue(document, inputName, elementId) {
         const inputValue = document.querySelector(`input[name="${inputName}"]`)?.value;
-        const elementValue = document.getElementById(elementId)?.textContent;
+        const element = document.getElementById(elementId);
+        const elementValue = element?.value || element?.textContent;
         return cleanText(inputValue || elementValue).replace(/^[^:]*:\s*/, '');
     }
 
@@ -234,7 +235,7 @@
         ).replace(/^Int:\s*/i, '').trim();
         return {
             bodyStyle: normalizeBodyStyle(
-                detailDocument.getElementById('specsBodyType')?.textContent
+                getSpecValue(detailDocument, 'bodyType', 'specsBodyType')
             ) || 'Other',
             fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
             transmissionType: getSpecValue(
