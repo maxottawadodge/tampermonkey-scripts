@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.6
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.6
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.6
+// @version      1.7
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.7
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.7
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -25,6 +25,7 @@
         'Trim',
         'Mileage',
         'Price',
+        'Body Style',
         'Ext',
         'Ext Long',
         'Int',
@@ -36,6 +37,9 @@
         'Condition',
         'Scraped On'
     ];
+    const legacyScraperHeaders = scraperHeaders.filter(header =>
+        header !== 'Body Style'
+    );
     const fuelTypes = [
         'Diesel',
         'Electric',
@@ -134,13 +138,19 @@
             );
         } else {
             const dataRow = trimTrailingEmptyCells(rows[0]);
-            if (rows.length !== 1 || dataRow.length !== scraperHeaders.length) {
+            const rowHeaders = dataRow.length === legacyScraperHeaders.length
+                ? legacyScraperHeaders
+                : scraperHeaders;
+            if (
+                rows.length !== 1 ||
+                dataRow.length !== rowHeaders.length
+            ) {
                 throw new Error(
-                    `Copy one complete scraper row (${scraperHeaders.length} columns), without the header.`
+                    `Copy one complete scraper row (${scraperHeaders.length} columns, or ${legacyScraperHeaders.length} from an older scraper), without the header.`
                 );
             }
             values = Object.fromEntries(
-                scraperHeaders.map((header, index) => [header, dataRow[index] || ''])
+                rowHeaders.map((header, index) => [header, dataRow[index] || ''])
             );
         }
 
@@ -151,6 +161,7 @@
             make: values.Make.trim(),
             model: values.Model.trim(),
             trim: values.Trim.trim(),
+            bodyStyle: (values['Body Style'] || '').trim(),
             mileage: values.Mileage.replace(/\D/g, ''),
             price: values.Price.replace(/[^\d.]/g, ''),
             exteriorColor: values.Ext.trim(),
@@ -335,6 +346,7 @@
             ['Make', ['make'], vehicle.make],
             ['Model', ['model'], vehicle.model],
             ['Trim', ['trim'], vehicle.trim],
+            ['Body style', ['body style'], vehicle.bodyStyle, true],
             ['Exterior color', ['exterior color'], vehicle.exteriorColor],
             ['Interior color', ['interior color'], vehicle.interiorColor],
             ['Mileage', ['mileage', 'odometer'], vehicle.mileage],
