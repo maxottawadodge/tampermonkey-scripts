@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.4
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.4
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.4
+// @version      1.5
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.5
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.5
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -137,7 +137,11 @@
             trim: values.Trim.trim(),
             mileage: values.Mileage.replace(/\D/g, ''),
             price: values.Price.replace(/[^\d.]/g, ''),
-            condition: values.Condition.trim(),
+            exteriorColor: values.Ext.trim(),
+            interiorColor: /^other$/i.test(values.Int.trim())
+                ? 'Black'
+                : values.Int.trim(),
+            condition: 'Excellent',
             fuelType: values['Fuel Type'].trim(),
             transmission: values.Transmission.trim(),
             description: values.Description.trim()
@@ -197,6 +201,37 @@
     function getValueElement(element) {
         if (element.matches('input, textarea, select')) return element;
         return element.querySelector('input:not([type="hidden"]), textarea, select');
+    }
+
+    function findCleanTitleCheckbox() {
+        return [...document.querySelectorAll(
+            'input[type="checkbox"], [role="checkbox"], label'
+        )].find(element =>
+            element.getClientRects().length &&
+            normalize(
+                element.getAttribute('aria-label') ||
+                element.innerText ||
+                element.textContent
+            )
+                .includes('this vehicle has a clean title')
+        ) || null;
+    }
+
+    function checkCheckbox(element) {
+        const checkbox = element.matches('input[type="checkbox"]')
+            ? element
+            : element.querySelector('input[type="checkbox"]') ||
+                (element.getAttribute('role') === 'checkbox' ? element : null);
+        if (checkbox) {
+            if (checkbox.checked || checkbox.getAttribute('aria-checked') === 'true') {
+                return true;
+            }
+            checkbox.click();
+            return checkbox.checked || checkbox.getAttribute('aria-checked') === 'true';
+        }
+
+        element.click();
+        return element.getAttribute('aria-checked') === 'true';
     }
 
     function setNativeValue(element, value) {
@@ -284,6 +319,8 @@
             ['Make', ['make'], vehicle.make],
             ['Model', ['model'], vehicle.model],
             ['Trim', ['trim'], vehicle.trim],
+            ['Exterior color', ['exterior color'], vehicle.exteriorColor],
+            ['Interior color', ['interior color'], vehicle.interiorColor],
             ['Mileage', ['mileage', 'odometer'], vehicle.mileage],
             ['Price', ['price'], vehicle.price],
             ['Condition', ['condition', 'vehicle condition'], vehicle.condition, true],
@@ -302,6 +339,13 @@
             }
         }
 
+        const cleanTitleCheckbox = findCleanTitleCheckbox();
+        if (cleanTitleCheckbox && checkCheckbox(cleanTitleCheckbox)) {
+            filledCount++;
+        } else {
+            failed.push('Clean title checkbox');
+        }
+
         return { filledCount, failed };
     }
 
@@ -318,8 +362,10 @@
         const status = document.createElement('span');
         status.setAttribute('aria-live', 'polite');
         status.style.cssText =
-            'padding:6px 8px;background:#fff;border-radius:4px;' +
-            'box-shadow:0 1px 5px rgba(0,0,0,.2);text-align:right;';
+            'display:block;padding:6px 8px;background:#fff;border-radius:4px;' +
+            'box-shadow:0 1px 5px rgba(0,0,0,.2);text-align:left;' +
+            'white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;' +
+            'overflow:auto;max-width:min(420px,calc(100vw - 48px));';
 
         const button = document.createElement('button');
         button.type = 'button';
@@ -328,12 +374,28 @@
             'padding:10px 16px;border:0;border-radius:6px;' +
             'background:#1877f2;color:#fff;font:bold 14px Arial,sans-serif;' +
             'cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.25);';
+        let clipboardContents = null;
         button.addEventListener('click', async () => {
             button.disabled = true;
-            status.textContent = 'Reading copied vehicle row...';
             try {
-                const text = await navigator.clipboard.readText();
-                const vehicle = getVehicleFromClipboard(text);
+                if (clipboardContents === null) {
+                    status.textContent = 'Reading clipboard...';
+                    clipboardContents = await navigator.clipboard.readText();
+                    if (!clipboardContents.trim()) {
+                        clipboardContents = null;
+                        status.textContent = 'Clipboard is empty. Copy a vehicle row and try again.';
+                        return;
+                    }
+                    status.textContent =
+                        `Clipboard contents detected:\n${clipboardContents}\n\n` +
+                        'Review the copied row, then click Confirm Autofill.';
+                    button.textContent = 'Confirm Autofill';
+                    return;
+                }
+
+                const vehicle = getVehicleFromClipboard(clipboardContents);
+                clipboardContents = null;
+                button.textContent = 'Autofill';
                 status.textContent = 'Filling vehicle fields...';
                 const { filledCount, failed } = await fillVehicleForm(vehicle);
                 status.textContent = failed.length
@@ -341,12 +403,15 @@
                     : `Filled ${filledCount} fields. Review the listing before publishing.`;
             } catch (error) {
                 console.error('Could not autofill Marketplace vehicle listing', error);
+                clipboardContents = null;
+                button.textContent = 'Autofill';
                 status.textContent = error instanceof DOMException &&
                     error.name === 'NotAllowedError'
                     ? 'Clipboard access was denied. Allow clipboard access and click Autofill again.'
                     : error.message || 'Autofill failed. Check the copied row and try again.';
             } finally {
                 button.disabled = false;
+                if (clipboardContents === null) button.textContent = 'Autofill';
             }
         });
 
