@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.42
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.42
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.42
+// @version         1.43
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.43
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.43
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -117,15 +117,15 @@
         if (!style || style === 'other') return '';
 
         const matches = [
-            ['Coupe', /\bcoupe\b/],
-            ['Truck', /\b(pickup|truck)\b/],
-            ['Sedan', /\bsedan\b/],
-            ['Hatchback', /\bhatchback\b/],
-            ['SUV', /\b(suv|sport utility|crossover|cuv)\b/],
-            ['Convertible', /\b(convertible|cabriolet|roadster)\b/],
-            ['Wagon', /\b(wagon|estate)\b/],
-            ['Minivan', /\b(minivan|mini van|passenger van|cargo van)\b/],
-            ['Small Car', /\b(compact car|subcompact car|small car|city car)\b/]
+            ['Coupe', /\bcoupes?\b/],
+            ['Truck', /\b(pickups?|trucks?)\b/],
+            ['Sedan', /\bsedans?\b/],
+            ['Hatchback', /\bhatchbacks?\b/],
+            ['SUV', /\b(suvs?|sport utility vehicles?|crossovers?|cuvs?)\b/],
+            ['Convertible', /\b(convertibles?|cabriolets?|roadsters?)\b/],
+            ['Wagon', /\b(wagons?|estates?)\b/],
+            ['Minivan', /\b(mini ?vans?|passenger vans?|cargo vans?)\b/],
+            ['Small Car', /\b(compact cars?|subcompact cars?|small cars?|city cars?)\b/]
         ];
         return matches.find(([, pattern]) => pattern.test(style))?.[0] || '';
     }
