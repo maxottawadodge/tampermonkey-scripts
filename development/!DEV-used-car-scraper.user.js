@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.29
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.29
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.29
+// @version      1.30
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.30
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.30
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -405,7 +405,7 @@
             const batchNumber = Math.floor(start / batchSize) + 1;
             if (batchNumber > 1) {
                 onProgress('batch', batchNumber, batchCount, 'waiting');
-                await new Promise(resolve => window.setTimeout(resolve, 1000));
+                await new Promise(resolve => window.setTimeout(resolve, 1500));
             }
 
             const batch = vehicles.slice(start, start + batchSize);
@@ -660,7 +660,7 @@
                         const row = getBatchStatusRow(completed, total);
                         if (batchStatus === 'waiting') {
                             row.label.textContent =
-                                `Batch ${completed}/${total}: waiting 1 second...`;
+                                `Batch ${completed}/${total}: waiting 1.5 seconds...`;
                         } else if (batchStatus === 'generating') {
                             row.label.textContent =
                                 `Batch ${completed}/${total}: generating descriptions...`;
