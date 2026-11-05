@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.1
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.1
+// @version      1.2
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.2
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.2
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -195,9 +195,14 @@
             if (!option) return false;
             element.value = option.value;
         } else {
-            const prototype = element instanceof HTMLTextAreaElement
-                ? HTMLTextAreaElement.prototype
-                : HTMLInputElement.prototype;
+            let prototype;
+            if (element instanceof HTMLTextAreaElement) {
+                prototype = HTMLTextAreaElement.prototype;
+            } else if (element instanceof HTMLInputElement) {
+                prototype = HTMLInputElement.prototype;
+            } else {
+                return false;
+            }
             const setter = Object.getOwnPropertyDescriptor(prototype, 'value')?.set;
             if (!setter) return false;
             setter.call(element, value);
@@ -218,7 +223,10 @@
             return true;
         }
 
-        if (!setNativeValue(element, value)) return false;
+        const valueElement = element.matches('input, textarea, select')
+            ? element
+            : element.querySelector('input:not([type="hidden"]), textarea, select');
+        if (!valueElement || !setNativeValue(valueElement, value)) return false;
         if (element.getAttribute('role') !== 'combobox') return true;
 
         await new Promise(resolve => window.setTimeout(resolve, 300));
