@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.44
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.44
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.44
+// @version         1.45
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.45
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.45
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -22,6 +22,7 @@
         ['Listed On', () => ''],
         ['Sold On', () => ''],
         ['Stock', vehicle => vehicle.stock],
+        ['Vehicle Type', vehicle => vehicle.vehicleType],
         ['URL', vehicle => vehicle.url],
         ['Year', vehicle => vehicle.year],
         ['Make', vehicle => vehicle.make],
@@ -188,6 +189,7 @@
                     .replace(/\D/g, ''),
                 url: key,
                 stock: cleanText(input.dataset.stockNumber),
+                vehicleType: 'Car/Truck',
                 vin,
                 windowStickerUrl: getWindowStickerUrl(vin),
                 condition: getCondition(key),
@@ -233,10 +235,17 @@
         const interiorColor = cleanText(
             detailDocument.querySelector('[data-popper="orig-int-color-tt"]')?.textContent
         ).replace(/^Int:\s*/i, '').trim();
+        const sourceBodyStyle = getSpecValue(
+            detailDocument,
+            'bodyType',
+            'specsBodyType'
+        );
+        const isCommercial = /\bcommercial\b/i.test(sourceBodyStyle);
         return {
-            bodyStyle: normalizeBodyStyle(
-                getSpecValue(detailDocument, 'bodyType', 'specsBodyType')
-            ) || 'Other',
+            vehicleType: isCommercial ? 'Commercial/Industrial' : 'Car/Truck',
+            bodyStyle: isCommercial
+                ? sourceBodyStyle
+                : normalizeBodyStyle(sourceBodyStyle) || 'Other',
             fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
             transmissionType: getSpecValue(
                 detailDocument,
@@ -396,6 +405,7 @@
 
     async function generateVehicleDescriptions(vehicles, apiKey, onStatus) {
         for (const vehicle of vehicles) {
+            if (vehicle.vehicleType === 'Commercial/Industrial') continue;
             vehicle.bodyStyle = normalizeBodyStyle(vehicle.bodyStyle) || 'Other';
             if (vehicle.bodyStyle === 'Other') {
                 onStatus?.('resolvingBodyStyle');
@@ -424,6 +434,7 @@
             'For each vehicle below, write persuasive, natural-sounding used-vehicle sales copy.',
             'For each one, output 2-3 compelling sentences followed by 3-8 concise feature bullets.',
             'Mention price and KMs in the sentences when available. Do not include VIN, stock number, or URL in the sales copy.',
+            'Respect the supplied Vehicle Type and Body Style; do not reclassify commercial/industrial vehicles.',
             'Use the supplied Body Style when it is relevant to describe the vehicle.',
             'When KMs are under 20,000, mention the MSRP from the Window Sticker PDF when you can verify it. Never guess or invent an MSRP.',
             'For electric powertrains, mention the electric range when it is provided in the vehicle data, source description, or Window Sticker PDF. Never guess or invent a range.',

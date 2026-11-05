@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.7
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.7
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.7
+// @version      1.8
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.8
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.8
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -18,6 +18,7 @@
         'Listed On',
         'Sold On',
         'Stock',
+        'Vehicle Type',
         'URL',
         'Year',
         'Make',
@@ -38,7 +39,10 @@
         'Scraped On'
     ];
     const legacyScraperHeaders = scraperHeaders.filter(header =>
-        header !== 'Body Style'
+        header !== 'Body Style' && header !== 'Vehicle Type'
+    );
+    const previousScraperHeaders = scraperHeaders.filter(header =>
+        header !== 'Vehicle Type'
     );
     const fuelTypes = [
         'Diesel',
@@ -138,15 +142,17 @@
             );
         } else {
             const dataRow = trimTrailingEmptyCells(rows[0]);
-            const rowHeaders = dataRow.length === legacyScraperHeaders.length
-                ? legacyScraperHeaders
-                : scraperHeaders;
+            const rowHeaders = dataRow.length === previousScraperHeaders.length
+                ? previousScraperHeaders
+                : dataRow.length === legacyScraperHeaders.length
+                    ? legacyScraperHeaders
+                    : scraperHeaders;
             if (
                 rows.length !== 1 ||
                 dataRow.length !== rowHeaders.length
             ) {
                 throw new Error(
-                    `Copy one complete scraper row (${scraperHeaders.length} columns, or ${legacyScraperHeaders.length} from an older scraper), without the header.`
+                    `Copy one complete scraper row (${scraperHeaders.length} columns, ${previousScraperHeaders.length} from the previous scraper, or ${legacyScraperHeaders.length} from an older scraper), without the header.`
                 );
             }
             values = Object.fromEntries(
@@ -155,7 +161,9 @@
         }
 
         return {
-            vehicleType: 'Car/Truck',
+            vehicleType: /^commercial\/industrial$/i.test(
+                (values['Vehicle Type'] || '').trim()
+            ) ? 'Commercial/Industrial' : 'Car/Truck',
             location: 'Ottawa, Ontario',
             year: values.Year.trim(),
             make: values.Make.trim(),
@@ -334,7 +342,7 @@
             ['vehicle type', 'category']
         );
         if (vehicleTypeField &&
-            await fillField(vehicleTypeField, 'Car/Truck', false)) {
+            await fillField(vehicleTypeField, vehicle.vehicleType, false)) {
             filledCount++;
         } else {
             failed.push('Vehicle type');
@@ -358,6 +366,10 @@
         ];
 
         for (const [label, aliases, value, exactOption = false] of fields) {
+            if (
+                label === 'Body style' &&
+                vehicle.vehicleType === 'Commercial/Industrial'
+            ) continue;
             if (!value) continue;
             const element = findField(label, aliases);
             if (!element || !await fillField(element, value, exactOption)) {
