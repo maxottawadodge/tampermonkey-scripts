@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.41
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.41
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.41
+// @version         1.42
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.42
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.42
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -496,7 +496,7 @@
                     vehicle.interiorColor = 'Other';
                     vehicle.interiorColorLong = '';
                     vehicle.descriptionBody = '';
-                    detailErrors.push(error);
+                    detailErrors.push({ vehicle, number: index + 1, error });
                     console.error('Could not scrape vehicle details', error);
                 }
                 detailCompleted++;
@@ -707,6 +707,29 @@
                 : 'Retry All';
         }
 
+        function addBatchRetryButton(batchStatus, batchNumber, batchVehicles, apiKey) {
+            if (batchStatus.retryButton) return;
+            batchStatus.vehicles = batchVehicles;
+            batchStatus.apiKey = apiKey;
+            batchStatus.retryButton = makeRetryButton(batchNumber, () =>
+                runBatchRetries([{
+                    number: batchNumber,
+                    vehicles: batchVehicles,
+                    apiKey
+                }])
+            );
+            batchStatus.retryButton.disabled = activeRetries > 0;
+            batchStatus.row.appendChild(batchStatus.retryButton);
+            updateRetryAllButton();
+        }
+
+        function clearBatchRetryButton(batchStatus) {
+            if (!batchStatus.retryButton) return;
+            batchStatus.retryButton.remove();
+            batchStatus.retryButton = null;
+            updateRetryAllButton();
+        }
+
         async function retryBatch(batchNumber, batchVehicles, apiKey) {
             const batchStatus = batchStatusRows.get(batchNumber);
             if (!batchStatus) return;
@@ -786,6 +809,155 @@
                 });
                 updateRetryAllButton();
             }
+        }
+
+        async function retryScrapeErrors(failedBatches, detailErrors, apiKey, total) {
+            const failedDescriptions = new Map(
+                failedBatches.map(batch => [batch.vehicles[0], batch])
+            );
+            let pendingDetails = [...detailErrors];
+
+            function reportAiProgress(batchStatus, batchNumber, attempt) {
+                return phase => {
+                    const message = phase === 'resolvingBodyStyle'
+                        ? 'resolving body style with AI...'
+                        : phase === 'waitingForDescription'
+                            ? 'body style resolved; waiting before description...'
+                            : 'generating description...';
+                    batchStatus.label.textContent =
+                        `Batch ${batchNumber}/${total}: ${message}`;
+                    status.textContent =
+                        `Retry ${attempt}/5, batch ${batchNumber}/${total}: ${message}`;
+                };
+            }
+
+            activeRetries++;
+            setRetryButtonBusy(retryAllButton, true);
+            batchStatusRows.forEach(batchStatus => {
+                if (batchStatus.retryButton) batchStatus.retryButton.disabled = true;
+            });
+            updateRetryAllButton();
+            try {
+                for (let attempt = 1; attempt <= 5 &&
+                    (pendingDetails.length || failedDescriptions.size); attempt++) {
+                    status.textContent =
+                        `Errors found. Rescanning in 10 seconds (retry ${attempt}/5)...`;
+                    await new Promise(resolve => window.setTimeout(resolve, 10000));
+
+                    const detailVehicles = new Set(
+                        pendingDetails.map(detail => detail.vehicle)
+                    );
+                    let aiRetryRequestCount = 0;
+                    async function waitBetweenAiRetries() {
+                        if (aiRetryRequestCount > 0) {
+                                await new Promise(resolve =>
+                                    window.setTimeout(resolve, aiRequestDelayMs)
+                                );
+                        }
+                        aiRetryRequestCount++;
+                    }
+
+                    const nextDetailErrors = [];
+                    for (const detailError of pendingDetails) {
+                        const { vehicle, number } = detailError;
+                        const batchStatus = getBatchStatusRow(number, total);
+                        batchStatus.label.textContent =
+                                `Batch ${number}/${total}: retry ${attempt}/5 loading vehicle details...`;
+                        status.textContent =
+                                `Retry ${attempt}/5: reloading vehicle details for batch ${number}/${total}...`;
+                        try {
+                                Object.assign(vehicle, await fetchVehicleDetails(vehicle));
+                        } catch (error) {
+                                console.error(`Could not rescan vehicle details for batch ${number}`, error);
+                                batchStatus.label.textContent =
+                                    `Batch ${number}/${total}: detail lookup retry failed - ${error.message}`;
+                                nextDetailErrors.push({ vehicle, number, error });
+                                continue;
+                        }
+
+                        try {
+                                batchStatus.label.textContent =
+                                    `Batch ${number}/${total}: regenerating description after detail rescan...`;
+                                await waitBetweenAiRetries();
+                                const descriptions = await generateVehicleDescriptions(
+                                    [vehicle],
+                                    apiKey,
+                                    reportAiProgress(batchStatus, number, attempt)
+                                );
+                                vehicle.description = descriptions[0];
+                                failedDescriptions.delete(vehicle);
+                                batchStatus.label.textContent =
+                                    `Batch ${number}/${total}: complete after detail rescan`;
+                                clearBatchRetryButton(batchStatus);
+                        } catch (error) {
+                                console.error(`Could not regenerate description for batch ${number}`, error);
+                                failedDescriptions.set(vehicle, {
+                                    number,
+                                    vehicles: [vehicle],
+                                    error
+                                });
+                                batchStatus.label.textContent =
+                                    `Batch ${number}/${total}: description retry failed - ${error.message}`;
+                                addBatchRetryButton(batchStatus, number, [vehicle], apiKey);
+                        }
+                    }
+                    pendingDetails = nextDetailErrors;
+
+                    for (const [vehicle, batch] of [...failedDescriptions]) {
+                        if (detailVehicles.has(vehicle)) continue;
+                        await waitBetweenAiRetries();
+                        const batchStatus = getBatchStatusRow(batch.number, total);
+                        if (batchStatus.retryButton) {
+                                batchStatus.retryButton.disabled = true;
+                                setRetryButtonBusy(batchStatus.retryButton, true);
+                        }
+                        batchStatus.label.textContent =
+                                `Batch ${batch.number}/${total}: retry ${attempt}/5 generating description...`;
+                        try {
+                                const descriptions = await generateVehicleDescriptions(
+                                    batch.vehicles,
+                                    apiKey,
+                                    reportAiProgress(batchStatus, batch.number, attempt)
+                                );
+                                batch.vehicles.forEach((item, index) => {
+                                    item.description = descriptions[index];
+                                });
+                                failedDescriptions.delete(vehicle);
+                                batchStatus.label.textContent =
+                                    `Batch ${batch.number}/${total}: complete after retry`;
+                                clearBatchRetryButton(batchStatus);
+                        } catch (error) {
+                                console.error(`Could not retry descriptions for batch ${batch.number}`, error);
+                                batch.error = error;
+                                batchStatus.label.textContent =
+                                    `Batch ${batch.number}/${total}: failed - ${error.message}`;
+                                addBatchRetryButton(
+                                    batchStatus,
+                                    batch.number,
+                                    batch.vehicles,
+                                    apiKey
+                                );
+                        } finally {
+                                if (batchStatus.retryButton) {
+                                    setRetryButtonBusy(batchStatus.retryButton, false);
+                                    batchStatus.retryButton.disabled = false;
+                                }
+                        }
+                    }
+                }
+            } finally {
+                activeRetries--;
+                setRetryButtonBusy(retryAllButton, false);
+                batchStatusRows.forEach(batchStatus => {
+                    if (batchStatus.retryButton) batchStatus.retryButton.disabled = false;
+                });
+                updateRetryAllButton();
+            }
+
+            return {
+                failedBatches: [...failedDescriptions.values()],
+                detailErrors: pendingDetails
+            };
         }
 
         const apiKeyInput = document.createElement('input');
@@ -896,7 +1068,7 @@
                     return;
                 }
 
-                const { failedBatches, detailErrors } = await scrapeVehicles(
+                let { failedBatches, detailErrors } = await scrapeVehicles(
                     vehicles,
                     apiKey,
                     (phase, completed, total, batchStatus, error, batchVehicles) => {
@@ -944,12 +1116,20 @@
                         }
                     }
                 );
+                if (failedBatches.length || detailErrors.length) {
+                    ({ failedBatches, detailErrors } = await retryScrapeErrors(
+                        failedBatches,
+                        detailErrors,
+                        apiKey,
+                        vehicles.length
+                    ));
+                }
                 hasRun = true;
                 copyButton.disabled = false;
                 downloadButton.disabled = false;
                 if (failedBatches.length || detailErrors.length) {
                     status.textContent =
-                        `Processed ${vehicles.length} vehicles; ${failedBatches.length} batches and ${detailErrors.length} detail lookups failed. Retry failed batches above.`;
+                        `Processed ${vehicles.length} vehicles. Automatic retries finished with ${failedBatches.length} failed description batches and ${detailErrors.length} failed detail lookups.`;
                 } else {
                     status.textContent =
                         `Generated descriptions for ${vehicles.length} vehicles. Ready to export.`;
