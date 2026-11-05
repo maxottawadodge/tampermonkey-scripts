@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.18
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.18
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.18
+// @version      1.20
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.20
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.20
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -25,15 +25,18 @@
         ['Model', vehicle => vehicle.model],
         ['Mileage', vehicle => vehicle.mileage],
         ['Price', vehicle => vehicle.price],
-        ['Colour', vehicle => vehicle.colour],
+        ['Exterior', vehicle => vehicle.exteriorColor],
+        ['Interior', vehicle => vehicle.interiorColor],
         ['Fuel Type', vehicle => vehicle.fuelType],
         ['Transmission', vehicle => vehicle.transmissionType],
         ['Description', vehicle => vehicle.description],
         ['Trim', vehicle => vehicle.trim],
-        ['VIN', vehicle => vehicle.vin]
+        ['VIN', vehicle => vehicle.vin],
+        ['Condition', vehicle => vehicle.condition],
+        ['Scraped On', vehicle => vehicle.scrapedOn]
     ];
 
-    const exteriorColorOptions = [
+    const colorOptions = [
         ['Off white', /\b(off white|ivory|cream)\b/],
         ['Charcoal', /\b(charcoal|graphite|gunmetal)\b/],
         ['Burgundy', /\b(burgundy|maroon|wine)\b/],
@@ -59,15 +62,31 @@
         return (value || '').replace(/\s+/g, ' ').trim();
     }
 
-    function normalizeExteriorColor(value) {
+    function normalizeColor(value) {
         const color = cleanText(value)
             .replace(/([a-z])([A-Z])/g, '$1 $2')
             .toLowerCase()
             .replace(/[^a-z]+/g, ' ')
             .trim();
         if (/\bblack forest green\b/.test(color)) return 'Green';
-        const match = exteriorColorOptions.find(([, pattern]) => pattern.test(color));
+        const match = colorOptions.find(([, pattern]) => pattern.test(color));
         return match ? match[0] : 'Other';
+    }
+
+    function getCondition(url) {
+        const route = new URL(url).pathname.match(
+            /\/(new|used|occasion|demo)(?:\/|$)/i
+        )?.[1]?.toLowerCase();
+        if (route === 'occasion') return 'used';
+        return route || '';
+    }
+
+    function formatScrapedDate(date) {
+        const months = [
+            'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+            'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'
+        ];
+        return `${months[date.getMonth()]} ${date.getDate()}, ${date.getFullYear()}`;
     }
 
     function getPrice(card) {
@@ -79,6 +98,7 @@
 
     function getVehicleCards() {
         const vehicles = new Map();
+        const scrapedOn = formatScrapedDate(new Date());
         const inputs = document.querySelectorAll(
             'input[name="vehicledata"]'
         );
@@ -89,7 +109,7 @@
 
             const carId = cleanText(input.dataset.carid);
             const listingLink = [...card.querySelectorAll('a[href]')].find(link =>
-                /\/(?:used|occasion|new)\/[^/]*id\d+\.html$/i.test(link.pathname) &&
+                /\/(?:used|occasion|new|demo)\/[^/]*id\d+\.html$/i.test(link.pathname) &&
                 (!carId || link.pathname.includes(`id${carId}.html`))
             );
             if (!listingLink) continue;
@@ -114,7 +134,10 @@
                 url: key,
                 stock: cleanText(input.dataset.stockNumber),
                 vin: cleanText(input.dataset.vin).toUpperCase(),
-                colour: 'Other',
+                condition: getCondition(key),
+                scrapedOn,
+                exteriorColor: 'Other',
+                interiorColor: 'Other',
                 description: '',
                 descriptionBody: '',
                 fuelType: '',
@@ -139,7 +162,10 @@
         const html = await response.text();
         const detailDocument = new DOMParser().parseFromString(html, 'text/html');
         const exteriorColor = cleanText(
-            detailDocument.querySelector('.specsExtColor')?.textContent
+            detailDocument.getElementById('orig-color-tt')?.textContent
+        ).replace(/^[^:]*:\s*/, '');
+        const interiorColor = cleanText(
+            detailDocument.getElementById('orig-int-color-tt')?.textContent
         ).replace(/^[^:]*:\s*/, '');
         return {
             fuelType: getSpecValue(detailDocument, 'fuelType', 'specsFuel'),
@@ -148,7 +174,8 @@
                 'transmission',
                 'specsTransmission'
             ),
-            colour: normalizeExteriorColor(exteriorColor),
+            exteriorColor: normalizeColor(exteriorColor),
+            interiorColor: normalizeColor(interiorColor),
             descriptionBody: cleanText(
                 detailDocument.querySelector('.carDescriptionBody')?.textContent
             )
@@ -315,7 +342,8 @@
                 } catch (error) {
                     vehicle.fuelType = '';
                     vehicle.transmissionType = '';
-                    vehicle.colour = 'Other';
+                    vehicle.exteriorColor = 'Other';
+                    vehicle.interiorColor = 'Other';
                     vehicle.descriptionBody = '';
                     detailErrors.push(error);
                     console.error('Could not scrape vehicle details', error);
@@ -367,9 +395,9 @@
         return { descriptionErrors, detailErrors };
     }
 
-    function makeDelimitedText(vehicles, delimiter, quoteValues) {
+    function makeDelimitedText(vehicles, delimiter, quoteValues, includeHeaders = false) {
         const rows = [
-            columns.map(([label]) => label),
+            ...(includeHeaders ? [columns.map(([label]) => label)] : []),
             ...vehicles.map(vehicle =>
                 columns.map(([, getValue]) => getValue(vehicle))
             )
@@ -414,9 +442,11 @@
             'max-width:calc(100vw - 72px);';
         toggleButton.setAttribute('aria-controls', controls.id);
 
+        let savedApiKey = String(GM_getValue('geminiApiKey', '')).trim();
         const status = document.createElement('span');
         status.setAttribute('aria-live', 'polite');
-        status.textContent = GM_getValue('geminiApiKey', '')
+        status.style.cssText = 'flex:0 0 100%;';
+        status.textContent = savedApiKey
             ? 'Gemini API key ready. Click Run Scrape.'
             : 'Add a Gemini API key, then click Run Scrape.';
         let vehicles = [];
@@ -441,13 +471,41 @@
         apiKeyInput.style.cssText =
             'box-sizing:border-box;width:180px;padding:7px 8px;' +
             'border:1px solid #bbb;border-radius:4px;';
+        const keyToggleButton = makeButton('', () => {
+            const expanded = keyControls.hidden;
+            keyControls.hidden = !expanded;
+            keyControls.style.display = expanded ? 'flex' : 'none';
+            keyToggleButton.setAttribute('aria-expanded', String(expanded));
+            keyToggleButton.textContent =
+                `${savedApiKey ? 'API key saved' : 'Set API key'} ${expanded ? '▾' : '▸'}`;
+        });
+        keyToggleButton.setAttribute('aria-controls', 'dev-used-car-scraper-key-controls');
+        const keyControls = document.createElement('div');
+        keyControls.id = 'dev-used-car-scraper-key-controls';
+        keyControls.hidden = Boolean(savedApiKey);
+        keyControls.style.cssText =
+            `display:${savedApiKey ? 'none' : 'flex'};align-items:center;gap:8px;`;
+        function updateKeyToggle() {
+            const expanded = !keyControls.hidden;
+            keyToggleButton.setAttribute('aria-expanded', String(expanded));
+            keyToggleButton.textContent =
+                `${savedApiKey ? 'API key saved' : 'Set API key'} ${expanded ? '▾' : '▸'}`;
+            keyToggleButton.style.background = savedApiKey ? '#27823b' : '#2d6cdf';
+        }
+        updateKeyToggle();
         const saveKeyButton = makeButton('Save key', () => {
-            GM_setValue('geminiApiKey', apiKeyInput.value.trim());
+            const apiKey = apiKeyInput.value.trim();
+            GM_setValue('geminiApiKey', apiKey);
             apiKeyInput.value = '';
-            status.textContent = GM_getValue('geminiApiKey', '')
+            savedApiKey = apiKey;
+            status.textContent = savedApiKey
                 ? 'Gemini API key saved in Tampermonkey.'
                 : 'Gemini API key cleared.';
+            keyControls.hidden = Boolean(savedApiKey);
+            keyControls.style.display = savedApiKey ? 'none' : 'flex';
+            updateKeyToggle();
         });
+        keyControls.append(apiKeyInput, saveKeyButton);
         toggleButton.addEventListener('click', () => {
             const expanded = toggleButton.getAttribute('aria-expanded') !== 'true';
             toggleButton.setAttribute('aria-expanded', String(expanded));
@@ -518,7 +576,12 @@
             }
             try {
                 await navigator.clipboard.writeText(
-                    makeDelimitedText(vehicles, '\t', false)
+                    makeDelimitedText(
+                        vehicles,
+                        '\t',
+                        false,
+                        includeHeadersCheckbox.checked
+                    )
                 );
                 status.textContent =
                     `Copied ${vehicles.length} vehicles. Paste into Sheets.`;
@@ -534,7 +597,12 @@
             }
 
             const blob = new Blob(
-                ['\uFEFF', makeDelimitedText(vehicles, ',', true)],
+                ['\uFEFF', makeDelimitedText(
+                    vehicles,
+                    ',',
+                    true,
+                    includeHeadersCheckbox.checked
+                )],
                 { type: 'text/csv;charset=utf-8' }
             );
             const downloadUrl = URL.createObjectURL(blob);
@@ -545,14 +613,21 @@
             setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
             status.textContent = `Downloaded ${vehicles.length} vehicles.`;
         });
-
         copyButton.disabled = true;
         downloadButton.disabled = true;
+        const includeHeadersCheckbox = document.createElement('input');
+        includeHeadersCheckbox.type = 'checkbox';
+        includeHeadersCheckbox.checked = false;
+        const includeHeadersLabel = document.createElement('label');
+        includeHeadersLabel.style.cssText =
+            'display:flex;align-items:center;gap:4px;cursor:pointer;';
+        includeHeadersLabel.append(includeHeadersCheckbox, 'Include headers');
         controls.append(
             status,
-            apiKeyInput,
-            saveKeyButton,
+            keyToggleButton,
+            keyControls,
             runButton,
+            includeHeadersLabel,
             copyButton,
             downloadButton
         );
