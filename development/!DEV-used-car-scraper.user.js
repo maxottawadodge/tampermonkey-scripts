@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.37
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.37
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.37
+// @version         1.38
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.38
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.38
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -564,7 +564,8 @@
         panel.style.cssText =
             'position:fixed;right:16px;bottom:16px;z-index:999999;' +
             'display:flex;flex-direction:column;align-items:flex-end;gap:8px;padding:10px;' +
-            'max-width:calc(100vw - 52px);' +
+            'box-sizing:border-box;width:min(420px,33vw,calc(100vw - 32px));' +
+            'max-height:calc(100vh - 32px);' +
             'background:#fff;border:1px solid #bbb;border-radius:6px;' +
             'box-shadow:0 2px 10px rgba(0,0,0,.2);font:13px Arial,sans-serif;';
 
@@ -581,7 +582,7 @@
         controls.hidden = true;
         controls.style.cssText =
             'display:none;flex-direction:column;align-items:flex-end;gap:8px;' +
-            'max-width:calc(100vw - 72px);';
+            'width:100%;max-width:100%;min-width:0;box-sizing:border-box;';
         toggleButton.setAttribute('aria-controls', controls.id);
 
         let savedApiKey = String(GM_getValue('geminiApiKey', '')).trim();
@@ -594,13 +595,15 @@
         const statusArea = document.createElement('div');
         statusArea.setAttribute('aria-live', 'polite');
         statusArea.style.cssText =
-            'display:flex;flex-direction:column;align-items:flex-end;gap:4px;' +
-            'text-align:right;width:100%;';
+            'display:flex;flex-direction:column;align-items:stretch;gap:4px;' +
+            'text-align:right;width:100%;max-height:33vh;overflow-y:auto;' +
+            'overflow-x:hidden;min-width:0;overflow-wrap:anywhere;';
         const status = document.createElement('div');
         status.textContent = 'Ready.';
         const batchStatusList = document.createElement('div');
         batchStatusList.style.cssText =
-            'display:flex;flex-direction:column;align-items:flex-end;gap:4px;width:100%;';
+            'display:flex;flex-direction:column;align-items:stretch;gap:4px;width:100%;' +
+            'min-width:0;overflow-wrap:anywhere;';
         statusArea.append(status, batchStatusList);
         const batchStatusRows = new Map();
         let vehicles = [];
@@ -687,7 +690,14 @@
                 : `Retrying ${retries.length} failed batches...`;
 
             try {
-                for (const retry of retries) {
+                for (const [index, retry] of retries.entries()) {
+                    if (index > 0) {
+                        status.textContent =
+                            `Waiting 1.5 seconds before retrying batch ${retry.number}...`;
+                        await new Promise(resolve =>
+                            window.setTimeout(resolve, aiRequestDelayMs)
+                        );
+                    }
                     await retryBatch(retry.number, retry.vehicles, retry.apiKey);
                 }
                 const remaining = [...batchStatusRows.values()]
