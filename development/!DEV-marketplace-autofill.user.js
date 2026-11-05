@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.0
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.0
+// @version      1.1
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.1
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.1
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -76,12 +76,21 @@
         return rows;
     }
 
+    function trimTrailingEmptyCells(row) {
+        const trimmed = [...row];
+        while (trimmed.length && !trimmed[trimmed.length - 1].trim()) {
+            trimmed.pop();
+        }
+        return trimmed;
+    }
+
     function getVehicleFromClipboard(text) {
         const rows = parseTsv(text);
         if (!rows.length) throw new Error('The clipboard is empty.');
 
         let values;
-        const firstRowHeaders = rows[0].map(value => normalize(value));
+        const headerRow = trimTrailingEmptyCells(rows[0]);
+        const firstRowHeaders = headerRow.map(value => normalize(value));
         if (
             firstRowHeaders.includes('status') &&
             firstRowHeaders.includes('year') &&
@@ -91,26 +100,31 @@
             if (rows.length !== 2) {
                 throw new Error('Copy exactly one vehicle row, with its header row if included.');
             }
+            const dataRow = trimTrailingEmptyCells(rows[1]);
+            if (dataRow.length > headerRow.length) {
+                throw new Error('The copied row has non-empty cells beyond its headers.');
+            }
             const headerIndexes = new Map(
-                rows[0].map((header, index) => [normalize(header), index])
+                headerRow.map((header, index) => [normalize(header), index])
             );
             values = Object.fromEntries(
                 scraperHeaders.map((header, index) => {
                     const columnIndex = headerIndexes.get(normalize(header));
                     return [
                         header,
-                        columnIndex === undefined ? '' : rows[1][columnIndex] || ''
+                        columnIndex === undefined ? '' : dataRow[columnIndex] || ''
                     ];
                 })
             );
         } else {
-            if (rows.length !== 1 || rows[0].length !== scraperHeaders.length) {
+            const dataRow = trimTrailingEmptyCells(rows[0]);
+            if (rows.length !== 1 || dataRow.length !== scraperHeaders.length) {
                 throw new Error(
                     `Copy one complete scraper row (${scraperHeaders.length} columns), without the header.`
                 );
             }
             values = Object.fromEntries(
-                scraperHeaders.map((header, index) => [header, rows[0][index] || ''])
+                scraperHeaders.map((header, index) => [header, dataRow[index] || ''])
             );
         }
 
