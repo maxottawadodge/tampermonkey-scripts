@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.39
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.39
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.39
+// @version         1.40
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.40
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.40
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -622,6 +622,7 @@
         let hasRun = false;
         let activeRetries = 0;
         let retryAllButton;
+        const retryAnimations = new WeakMap();
 
         function makeButton(label, handler) {
             const button = document.createElement('button');
@@ -635,7 +636,12 @@
         }
 
         function makeRetryButton(batchNumber, handler) {
-            const button = makeButton('↻', handler);
+            const button = makeButton('', handler);
+            const icon = document.createElement('span');
+            icon.dataset.retryIcon = '';
+            icon.textContent = '↻';
+            icon.style.cssText = 'display:inline-block;line-height:1;';
+            button.appendChild(icon);
             button.setAttribute('aria-label', `Retry batch ${batchNumber}`);
             button.title = `Retry batch ${batchNumber}`;
             button.style.cssText +=
@@ -643,6 +649,25 @@
                 'min-width:36px;padding:0;display:inline-flex;align-items:center;' +
                 'justify-content:center;line-height:1;font-size:22px;';
             return button;
+        }
+
+        function setRetryButtonBusy(button, busy) {
+            const icon = button.querySelector('[data-retry-icon]');
+            if (!icon) return;
+
+            if (busy) {
+                if (!retryAnimations.has(icon)) {
+                    retryAnimations.set(icon, icon.animate(
+                        [{ transform: 'rotate(0deg)' }, { transform: 'rotate(360deg)' }],
+                        { duration: 800, iterations: Infinity }
+                    ));
+                }
+                button.setAttribute('aria-busy', 'true');
+            } else {
+                retryAnimations.get(icon)?.cancel();
+                retryAnimations.delete(icon);
+                button.removeAttribute('aria-busy');
+            }
         }
 
         function makeRow() {
@@ -676,7 +701,7 @@
                 .length;
             retryAllButton.hidden = failedCount === 0;
             retryAllButton.disabled = activeRetries > 0;
-            retryAllButton.textContent = failedCount > 0
+            retryAllLabel.textContent = failedCount > 0
                 ? `Retry All (${failedCount})`
                 : 'Retry All';
         }
@@ -685,7 +710,9 @@
             const batchStatus = batchStatusRows.get(batchNumber);
             if (!batchStatus) return;
 
-            batchStatus.retryButton.disabled = true;
+            const retryButton = batchStatus.retryButton;
+            retryButton.disabled = true;
+            setRetryButtonBusy(retryButton, true);
             batchStatus.label.textContent = `Batch ${batchNumber}: retrying...`;
             try {
                 const descriptions = await generateVehicleDescriptions(
@@ -713,6 +740,8 @@
                 console.error(`Could not retry descriptions for batch ${batchNumber}`, error);
                 batchStatus.label.textContent =
                     `Batch ${batchNumber}: failed - ${error.message}`;
+            } finally {
+                setRetryButtonBusy(retryButton, false);
             }
         }
 
@@ -721,6 +750,7 @@
 
             activeRetries++;
             runButton.disabled = true;
+            setRetryButtonBusy(retryAllButton, true);
             updateRetryAllButton();
             batchStatusRows.forEach(batchStatus => {
                 if (batchStatus.retryButton) batchStatus.retryButton.disabled = true;
@@ -748,6 +778,7 @@
                     : 'All failed batches completed. Ready to export.';
             } finally {
                 activeRetries--;
+                setRetryButtonBusy(retryAllButton, false);
                 runButton.disabled = false;
                 batchStatusRows.forEach(batchStatus => {
                     if (batchStatus.retryButton) batchStatus.retryButton.disabled = false;
@@ -764,7 +795,7 @@
         apiKeyInput.style.cssText =
             'box-sizing:border-box;width:180px;padding:7px 8px;' +
             'border:1px solid #bbb;border-radius:4px;';
-        retryAllButton = makeButton('Retry All', () => {
+        retryAllButton = makeButton('', () => {
             const retries = [...batchStatusRows.entries()]
                 .filter(([, batchStatus]) => batchStatus.retryButton)
                 .map(([number, batchStatus]) => ({
@@ -774,6 +805,15 @@
                 }));
             runBatchRetries(retries);
         });
+        const retryAllIcon = document.createElement('span');
+        retryAllIcon.dataset.retryIcon = '';
+        retryAllIcon.textContent = '↻';
+        retryAllIcon.style.cssText =
+            'display:inline-block;margin-right:6px;font-size:18px;line-height:1;';
+        const retryAllLabel = document.createElement('span');
+        retryAllButton.append(retryAllIcon, retryAllLabel);
+        retryAllButton.style.cssText +=
+            'display:inline-flex;align-items:center;justify-content:center;gap:2px;';
         retryAllButton.hidden = true;
 
         const keyToggleButton = makeButton('', () => {
