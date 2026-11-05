@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version      1.23
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.23
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.23
+// @version      1.24
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.24
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.24
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -217,7 +217,9 @@
     function generateDescriptions(vehicles, apiKey) {
         const vehicleDetails = vehicles.map((vehicle, index) => {
             const fields = columns
-                .filter(([label]) => label !== 'Description')
+                .filter(([label]) =>
+                    !['Stock', 'Ext', 'Int', 'Description', 'Scraped On'].includes(label)
+                )
                 .map(([label, getValue]) => [
                     label === 'Ext Long' ? 'Exterior Color' :
                         label === 'Int Long' ? 'Interior Color' : label,
