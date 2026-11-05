@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.5
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.5
+// @version      1.6
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.6
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.6
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -36,9 +36,25 @@
         'Condition',
         'Scraped On'
     ];
+    const fuelTypes = [
+        'Diesel',
+        'Electric',
+        'Gasoline',
+        'Flex',
+        'Hybrid',
+        'Petrol',
+        'Plug-in hybrid',
+        'Other'
+    ];
 
     function normalize(value) {
         return (value || '').replace(/\s+/g, ' ').trim().toLowerCase();
+    }
+
+    function normalizeFuelType(value) {
+        const normalized = normalize(value);
+        return fuelTypes.find(option => normalize(option) === normalized) ||
+            (normalized ? 'Other' : '');
     }
 
     function parseTsv(text) {
@@ -142,7 +158,7 @@
                 ? 'Black'
                 : values.Int.trim(),
             condition: 'Excellent',
-            fuelType: values['Fuel Type'].trim(),
+            fuelType: normalizeFuelType(values['Fuel Type']),
             transmission: values.Transmission.trim(),
             description: values.Description.trim()
         };
@@ -324,7 +340,7 @@
             ['Mileage', ['mileage', 'odometer'], vehicle.mileage],
             ['Price', ['price'], vehicle.price],
             ['Condition', ['condition', 'vehicle condition'], vehicle.condition, true],
-            ['Fuel type', ['fuel type', 'fuel'], vehicle.fuelType],
+            ['Fuel type', ['fuel type', 'fuel'], vehicle.fuelType, true],
             ['Transmission', ['transmission', 'transmission type'], vehicle.transmission],
             ['Description', ['description'], vehicle.description]
         ];
