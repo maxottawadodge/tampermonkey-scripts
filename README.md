@@ -16,6 +16,7 @@ This repository contains production and development Tampermonkey userscripts.
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js" target="_blank" rel="noopener noreferrer">!DEV DealerSocket tools</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js" target="_blank" rel="noopener noreferrer">!DEV Global phone links</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-listing.user.js" target="_blank" rel="noopener noreferrer">!DEV Marketplace listing helper</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js" target="_blank" rel="noopener noreferrer">!DEV Marketplace Autofill</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js" target="_blank" rel="noopener noreferrer">!DEV Used car scraper</a>
 
 Development scripts have `!DEV` names and separate update URLs so they can be
