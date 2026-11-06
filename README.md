@@ -24,6 +24,29 @@ Development scripts have `!DEV` names and separate update URLs so they can be
 installed alongside production scripts. Disable one environment when testing
 changes that would otherwise run on the same page.
 
+## Scheduled price tracking
+
+The Google Apps Script in [google-apps-script/price-tracker.gs](./google-apps-script/price-tracker.gs)
+checks each vehicle URL in the selected tracker tab, updates its `Price` cell,
+and appends price changes to a `Price History` tab.
+
+1. Open the tracker spreadsheet and choose **Extensions > Apps Script**.
+2. Replace the editor contents with `google-apps-script/price-tracker.gs` and save.
+3. Reload the spreadsheet. Select the tracker tab, then choose **Price Tracker >
+   Set active tab as tracker**.
+4. Choose **Price Tracker > Run price scan now** and approve the requested
+   spreadsheet and external request permissions.
+5. Choose **Price Tracker > Install daily scan (8 AM)**. The scan runs daily
+   around 8 AM in the Apps Script project's time zone. Use **Run price scan now**
+   to test it immediately.
+
+The tracker tab must have a header row containing `Stock`, `URL`, and `Price`.
+Price history records include a timestamp, stock number, vehicle, previous and
+current prices, URL, and whether the row is a baseline or a price change.
+This monitors vehicles already in the tracker; it does not add new inventory
+rows. A blank tracker price is recorded as a baseline on the first successful
+check.
+
 ## Workflow
 
 1. Make and test changes in `development/`. Increment the changed script's
