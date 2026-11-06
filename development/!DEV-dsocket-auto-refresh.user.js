@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV DealerSocket Auto Refresh
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js?v=1.1
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js?v=1.1
+// @version      1.2
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js?v=1.2
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js?v=1.2
 // @description  Refresh DealerSocket pages on a repeating interval
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*
@@ -17,7 +17,10 @@
     const storageKey = 'devDealerSocketAutoRefresh';
     const positionKey = 'devDealerSocketAutoRefreshPosition';
     const panelId = 'dev-dsocket-auto-refresh';
-    if (document.getElementById(panelId)) return;
+    if (window.top !== window.self) return;
+    const existingPanels = [...document.querySelectorAll(`#${panelId}`)];
+    existingPanels.slice(1).forEach(panel => panel.remove());
+    if (existingPanels.length) return;
 
     function readState() {
         const saved = sessionStorage.getItem(storageKey);
