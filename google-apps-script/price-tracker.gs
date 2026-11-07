@@ -147,10 +147,15 @@ function runPriceCheck() {
                 changedCount++;
             } catch (error) {
                 if (error.code === 'STOCK_NOT_FOUND' && columns.status) {
+                    const status = row[columns.status - 1];
+                    const missingStockStatus = splitStatusValues_(status)
+                        .some(value => value.toLowerCase() === 'sold')
+                        ? 'Gone'
+                        : 'Review';
                     trackerSheet.getRange(
                         columns.headerRow + index + 1,
                         columns.status
-                    ).setValue(addStatusValue_(row[columns.status - 1], 'Review'));
+                    ).setValue(addStatusValue_(status, missingStockStatus));
                 }
                 errors.push(`Stock ${stock}: ${error.message}`);
             }
