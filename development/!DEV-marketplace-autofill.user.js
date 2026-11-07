@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.12
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.12
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.12
+// @version      1.13
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.13
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.13
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -16,7 +16,7 @@
     const scraperHeaders = [
         'Status',
         'Listed On',
-        'Unlisted On',
+        'Mrkt',
         'Stock',
         'Vehicle Type',
         'URL',
