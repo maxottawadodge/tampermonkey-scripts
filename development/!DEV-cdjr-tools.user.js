@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.13
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.13
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.13
+// @version      5.14
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.14
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.14
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -247,48 +247,6 @@
         copyValue(vin, button, 'VIN');
     }
 
-    async function copyVehicleImageAndUrl(card, button) {
-        try {
-            const image = card.querySelector('.carImage img.mainImage') ||
-                card.querySelector('.carImage img');
-            const imageUrl = image?.dataset.imgsrc || image?.currentSrc || image?.src;
-            const vdpUrl = image?.closest('a[href]')?.href ||
-                card.querySelector('.carTitle[href]')?.href;
-
-            if (!imageUrl || !vdpUrl) {
-                throw new Error('Vehicle image or VDP link was not found.');
-            }
-            if (!navigator.clipboard?.write || typeof ClipboardItem === 'undefined') {
-                throw new Error('Rich clipboard access is not available in this browser.');
-            }
-
-            const clipboardContent = document.createElement('div');
-            const clipboardImage = document.createElement('img');
-            clipboardImage.src = imageUrl;
-            clipboardImage.alt = image.alt || 'Vehicle image';
-            const lineBreak = document.createElement('br');
-            clipboardContent.append(
-                clipboardImage,
-                lineBreak,
-                document.createTextNode(vdpUrl)
-            );
-
-            await navigator.clipboard.write([new ClipboardItem({
-                'text/html': new Blob([clipboardContent.innerHTML], { type: 'text/html' }),
-                'text/plain': new Blob([vdpUrl], { type: 'text/plain' })
-            })]);
-
-            const original = button.textContent;
-            button.textContent = '✓';
-            setTimeout(() => {
-                if (button.isConnected) button.textContent = original;
-            }, 1250);
-        } catch (error) {
-            console.error('Could not copy vehicle image and VDP URL', error);
-            alert(`Failed to copy vehicle image and VDP URL: ${error.message}`);
-        }
-    }
-
     async function decodeVIN(vin) {
 
         try {
@@ -489,18 +447,6 @@ ${rows.map(row => `
                     )
                 );
             }
-
-            toolbar.appendChild(
-                makeMiniButton(
-                    'CopyImg+URL',
-                    '#674ea7',
-                    function (event) {
-                        event.preventDefault();
-                        event.stopPropagation();
-                        copyVehicleImageAndUrl(card, this);
-                    }
-                )
-            );
 
             linkArea.insertBefore(
                 toolbar,
