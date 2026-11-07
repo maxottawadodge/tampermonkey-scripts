@@ -97,6 +97,14 @@ function runPriceCheck() {
         let requestCount = 0;
 
         rows.forEach((row, index) => {
+            if (
+                columns.status &&
+                splitStatusValues_(row[columns.status - 1])
+                    .some(value => value.toLowerCase() === 'gone')
+            ) {
+                return;
+            }
+
             const stock = String(row[columns.stock - 1] || '').trim();
             const url = String(row[columns.url - 1] || '').trim();
             if (!stock && !url) return;
