@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.48
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.48
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.48
+// @version         1.49
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.49
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.49
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -165,7 +165,8 @@
 
             const carId = cleanText(input.dataset.carid);
             const listingLink = [...card.querySelectorAll('a[href]')].find(link =>
-                /\/(?:used|occasion|new|demo)\/[^/]*id\d+\.html$/i.test(link.pathname) &&
+                /\/(?:used|occasion|demo)\/[^/]*id\d+\.html$|\/new\/(?:inventory\/)?[^/]*id\d+\.html$/i
+                    .test(link.pathname) &&
                 (!carId || link.pathname.includes(`id${carId}.html`))
             );
             if (!listingLink) continue;
@@ -604,7 +605,7 @@
             'padding:6px 10px;border:0;border-radius:4px;' +
             'background:#2d6cdf;color:#fff;font-weight:600;cursor:pointer;';
         const versionLabel = document.createElement('span');
-        versionLabel.textContent = 'v1.44';
+        versionLabel.textContent = 'v1.49';
         versionLabel.style.cssText = 'color:#ddd;font-size:10px;';
         header.append(toggleButton, versionLabel);
 
