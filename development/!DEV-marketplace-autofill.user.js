@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.15
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.15
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.15
+// @version      1.16
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.16
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.16
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -60,6 +60,21 @@
             (normalized ? 'Other' : '');
     }
 
+    function getCellText(cell) {
+        function getNodeText(node) {
+            if (node.nodeType === Node.TEXT_NODE) return node.nodeValue || '';
+            if (!(node instanceof Element)) return '';
+            if (node.tagName === 'BR') return '\n';
+
+            const text = [...node.childNodes].map(getNodeText).join('');
+            return ['DIV', 'LI', 'P'].includes(node.tagName)
+                ? `\n${text}\n`
+                : text;
+        }
+
+        return getNodeText(cell).replace(/^\n+|\n+$/g, '').trim();
+    }
+
     function parseTsv(text) {
         const rows = [];
         let row = [];
@@ -112,7 +127,7 @@
 
             if (headerIndex !== -1) {
                 const headers = tableRows[headerIndex]
-                    .map(cell => cell.innerText || cell.textContent || '');
+                    .map(getCellText);
                 return [
                     headers,
                     ...tableRows.slice(headerIndex + 1)
@@ -122,7 +137,7 @@
                             const link = cell.querySelector('a[href]');
                             return link && (header === 'listed on' || header === 'url')
                                 ? link.href
-                                : cell.innerText || cell.textContent || '';
+                                : getCellText(cell);
                         }))
                 ];
             }
@@ -133,7 +148,7 @@
                     const link = cell.querySelector('a[href]');
                     return link && (index === 1 || index === 5)
                         ? link.href
-                        : cell.innerText || cell.textContent || '';
+                        : getCellText(cell);
                 })];
             }
         }
