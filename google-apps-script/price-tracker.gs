@@ -142,6 +142,12 @@ function runPriceCheck() {
                 }
                 changedCount++;
             } catch (error) {
+                if (error.code === 'STOCK_NOT_FOUND' && columns.status) {
+                    trackerSheet.getRange(
+                        columns.headerRow + index + 1,
+                        columns.status
+                    ).setValue('Stock Gone');
+                }
                 errors.push(`Stock ${stock}: ${error.message}`);
             }
         });
@@ -337,9 +343,11 @@ function fetchListingPriceByStock_(stock) {
         if (price !== null) return price;
         throw new Error(`Stock lookup found "${stock}" but its current price was missing.`);
     }
-    throw new Error(
+    const error = new Error(
         `Original listing returned 404 and no current vehicle was found for stock "${stock}".`
     );
+    error.code = 'STOCK_NOT_FOUND';
+    throw error;
 }
 
 function extractListingPrice_(html) {
