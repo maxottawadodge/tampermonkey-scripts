@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.11
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.11
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.11
+// @version      5.12
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.12
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.12
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -262,16 +262,22 @@
                 throw new Error('Rich clipboard access is not available in this browser.');
             }
 
-            const link = document.createElement('a');
-            link.href = vdpUrl;
+            const clipboardContent = document.createElement('div');
             const clipboardImage = document.createElement('img');
             clipboardImage.src = imageUrl;
             clipboardImage.alt = image.alt || 'Vehicle image';
-            link.appendChild(clipboardImage);
+            const lineBreak = document.createElement('br');
+            const link = document.createElement('a');
+            link.href = vdpUrl;
+            link.textContent = vdpUrl;
+            clipboardContent.append(clipboardImage, lineBreak, link);
 
             await navigator.clipboard.write([new ClipboardItem({
-                'text/html': new Blob([link.outerHTML], { type: 'text/html' }),
-                'text/plain': new Blob([vdpUrl], { type: 'text/plain' })
+                'text/html': new Blob([clipboardContent.innerHTML], { type: 'text/html' }),
+                'text/plain': new Blob(
+                    [`Image: ${imageUrl}\nVDP: ${vdpUrl}`],
+                    { type: 'text/plain' }
+                )
             })]);
 
             const original = button.textContent;
