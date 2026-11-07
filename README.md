@@ -42,9 +42,9 @@ and appends price changes to a `Price History` tab.
 The tracker tab must have a header row containing `Stock`, `URL`, and `Price`.
 Price history records include a timestamp, stock number, vehicle, previous and
 current prices, URL, and whether the row is a baseline or a price change.
-Rows with a `Status` column are marked `Update Price` when their price changes
-when their current status is `Listed`. If a stock-number lookup confirms a
-vehicle is no longer listed, column C is marked `REVIEW`.
+Rows with a `Status` column get `Update Price` added alongside `Listed` when
+their price changes. If a stock-number lookup confirms a vehicle is no longer
+listed, `Review` is added to its Status without replacing existing values.
 This monitors vehicles already in the tracker; it does not add new inventory
 rows. A blank tracker price is recorded as a baseline on the first successful
 check.

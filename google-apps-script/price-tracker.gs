@@ -136,20 +136,21 @@ function runPriceCheck() {
                 ).setValue(currentPrice);
                 if (
                     columns.status &&
-                    String(row[columns.status - 1] || '').trim().toLowerCase() === 'listed'
+                    splitStatusValues_(row[columns.status - 1])
+                        .some(value => value.toLowerCase() === 'listed')
                 ) {
                     trackerSheet.getRange(
                         columns.headerRow + index + 1,
                         columns.status
-                    ).setValue('Update Price');
+                    ).setValue(addStatusValue_(row[columns.status - 1], 'Update Price'));
                 }
                 changedCount++;
             } catch (error) {
-                if (error.code === 'STOCK_NOT_FOUND') {
+                if (error.code === 'STOCK_NOT_FOUND' && columns.status) {
                     trackerSheet.getRange(
                         columns.headerRow + index + 1,
-                        3
-                    ).setValue('REVIEW');
+                        columns.status
+                    ).setValue(addStatusValue_(row[columns.status - 1], 'Review'));
                 }
                 errors.push(`Stock ${stock}: ${error.message}`);
             }
@@ -256,6 +257,21 @@ function firstHeaderColumn_(headers, choices) {
 
 function normalizeHeader_(value) {
     return String(value || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+}
+
+function splitStatusValues_(value) {
+    return String(value || '')
+        .split(/\s*,\s*/)
+        .map(status => status.trim())
+        .filter(Boolean);
+}
+
+function addStatusValue_(currentValue, valueToAdd) {
+    const statuses = splitStatusValues_(currentValue);
+    if (statuses.some(status => status.toLowerCase() === valueToAdd.toLowerCase())) {
+        return statuses.join(', ');
+    }
+    return [...statuses, valueToAdd].join(', ');
 }
 
 function getHistorySheet_(spreadsheet) {
