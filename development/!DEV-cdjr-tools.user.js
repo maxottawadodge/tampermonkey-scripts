@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.12
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.12
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.12
+// @version      5.13
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.13
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.13
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -267,17 +267,15 @@
             clipboardImage.src = imageUrl;
             clipboardImage.alt = image.alt || 'Vehicle image';
             const lineBreak = document.createElement('br');
-            const link = document.createElement('a');
-            link.href = vdpUrl;
-            link.textContent = vdpUrl;
-            clipboardContent.append(clipboardImage, lineBreak, link);
+            clipboardContent.append(
+                clipboardImage,
+                lineBreak,
+                document.createTextNode(vdpUrl)
+            );
 
             await navigator.clipboard.write([new ClipboardItem({
                 'text/html': new Blob([clipboardContent.innerHTML], { type: 'text/html' }),
-                'text/plain': new Blob(
-                    [`Image: ${imageUrl}\nVDP: ${vdpUrl}`],
-                    { type: 'text/plain' }
-                )
+                'text/plain': new Blob([vdpUrl], { type: 'text/plain' })
             })]);
 
             const original = button.textContent;
