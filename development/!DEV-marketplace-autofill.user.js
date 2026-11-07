@@ -95,6 +95,78 @@
         return rows;
     }
 
+    function parseHtmlTable(html) {
+        const clipboardDocument = new DOMParser().parseFromString(html, 'text/html');
+
+        for (const table of clipboardDocument.querySelectorAll('table')) {
+            const tableRows = [...table.querySelectorAll('tr')]
+                .map(row => [...row.cells])
+                .filter(row => row.length);
+            const headerIndex = tableRows.findIndex(row => {
+                const headers = row.map(cell => normalize(cell.textContent));
+                return headers.includes('status') &&
+                    headers.includes('year') &&
+                    headers.includes('make') &&
+                    headers.includes('model');
+            });
+
+            if (headerIndex !== -1) {
+                const headers = tableRows[headerIndex]
+                    .map(cell => cell.innerText || cell.textContent || '');
+                return [
+                    headers,
+                    ...tableRows.slice(headerIndex + 1)
+                        .filter(row => row.some(cell => cell.textContent.trim()))
+                        .map(row => row.map((cell, index) => {
+                            const header = normalize(headers[index]);
+                            const link = cell.querySelector('a[href]');
+                            return link && (header === 'listed on' || header === 'url')
+                                ? link.href
+                                : cell.innerText || cell.textContent || '';
+                        }))
+                ];
+            }
+
+            const dataRow = tableRows.find(row => row.length === scraperHeaders.length);
+            if (dataRow) {
+                return [dataRow.map((cell, index) => {
+                    const link = cell.querySelector('a[href]');
+                    return link && (index === 1 || index === 5)
+                        ? link.href
+                        : cell.innerText || cell.textContent || '';
+                })];
+            }
+        }
+
+        return null;
+    }
+
+    function serializeTsv(rows) {
+        return rows.map(row => row.map(value => {
+            const cell = String(value).replace(/"/g, '""');
+            return /["\t\r\n]/.test(cell) ? `"${cell}"` : cell;
+        }).join('\t')).join('\n');
+    }
+
+    async function readClipboard() {
+        const clipboard = navigator.clipboard;
+        if (typeof clipboard.read !== 'function') return clipboard.readText();
+
+        const items = await clipboard.read();
+        let plainText = '';
+        for (const item of items) {
+            if (item.types.includes('text/html')) {
+                const html = await (await item.getType('text/html')).text();
+                const rows = parseHtmlTable(html);
+                if (rows) return serializeTsv(rows);
+            }
+            if (!plainText && item.types.includes('text/plain')) {
+                plainText = await (await item.getType('text/plain')).text();
+            }
+        }
+        return plainText || clipboard.readText();
+    }
+
     function trimTrailingEmptyCells(row) {
         const trimmed = [...row];
         while (trimmed.length && !trimmed[trimmed.length - 1].trim()) {
@@ -435,7 +507,7 @@
             try {
                 if (clipboardContents === null) {
                     status.textContent = 'Reading clipboard...';
-                    clipboardContents = await navigator.clipboard.readText();
+                    clipboardContents = await readClipboard();
                     if (!clipboardContents.trim()) {
                         clipboardContents = null;
                         status.textContent = 'Clipboard is empty. Copy a vehicle row and try again.';
