@@ -115,7 +115,7 @@ function runPriceCheck() {
             try {
                 if (requestCount > 0) Utilities.sleep(150);
                 requestCount++;
-                const currentPrice = fetchListingPrice_(url);
+                const currentPrice = fetchListingPrice_(url, stock);
                 checkedCount++;
                 const previousPrice = parsePrice_(row[columns.price - 1]);
                 if (previousPrice === currentPrice) return;
@@ -134,6 +134,12 @@ function runPriceCheck() {
                     columns.headerRow + index + 1,
                     columns.price
                 ).setValue(currentPrice);
+                if (columns.status) {
+                    trackerSheet.getRange(
+                        columns.headerRow + index + 1,
+                        columns.status
+                    ).setValue('Update Price');
+                }
                 changedCount++;
             } catch (error) {
                 errors.push(`Stock ${stock}: ${error.message}`);
@@ -216,6 +222,7 @@ function getTrackerColumns_(sheet) {
         if (stock && url && price) {
             return {
                 headerRow: rowIndex + 1,
+                status: headers.get('status') || 0,
                 stock,
                 url,
                 price,
@@ -272,7 +279,7 @@ function getHistorySheet_(spreadsheet) {
     return sheet;
 }
 
-function fetchListingPrice_(url) {
+function fetchListingPrice_(url, stock) {
     if (!/^https:\/\/www\.ottawachryslerjeepdodge\.com\/(?:used|new|demo|occasion)\/[^?#]*id\d+\.html(?:[?#].*)?$/i.test(url)) {
         throw new Error('The listing URL is not a recognized dealership vehicle page.');
     }
@@ -283,17 +290,63 @@ function fetchListingPrice_(url) {
         headers: { Accept: 'text/html' }
     });
     const responseCode = response.getResponseCode();
+    if (responseCode === 404 && stock) {
+        return fetchListingPriceByStock_(stock);
+    }
     if (responseCode < 200 || responseCode >= 300) {
         throw new Error(`Vehicle page returned HTTP ${responseCode}.`);
     }
 
-    const html = response.getContentText();
-    const priceContainer = html.match(
-        /<div\b[^>]*\bid=["']carPrice["'][^>]*>([\s\S]*?)<\/div>/i
-    );
-    if (!priceContainer) {
-        throw new Error('Could not find a current price on the vehicle page.');
+    const price = extractListingPrice_(response.getContentText());
+    if (price !== null) return price;
+    if (stock) return fetchListingPriceByStock_(stock);
+    throw new Error('Could not find a current price on the vehicle page.');
+}
+
+function fetchListingPriceByStock_(stock) {
+    const searchUrl =
+        'https://www.ottawachryslerjeepdodge.com/used/search.html?stocknumber=' +
+        encodeURIComponent(stock);
+    const response = UrlFetchApp.fetch(searchUrl, {
+        followRedirects: true,
+        muteHttpExceptions: true,
+        headers: { Accept: 'text/html' }
+    });
+    const responseCode = response.getResponseCode();
+    if (responseCode < 200 || responseCode >= 300) {
+        throw new Error(
+            `Original listing returned 404 and stock lookup returned HTTP ${responseCode}.`
+        );
     }
+
+    const expectedStock = String(stock).trim().toUpperCase();
+    const cards = response.getContentText().match(
+        /<li\b[^>]*class=["'][^"']*\bcarBoxWrapper\b[^"']*["'][^>]*>[\s\S]*?<\/li>/gi
+    ) || [];
+    for (const card of cards) {
+        const stockMatches = [
+            ...card.matchAll(
+                /(?:data-stock-number|data-stockid)=["']([^"']+)["']/gi
+            )
+        ];
+        if (!stockMatches.some(match =>
+            match[1].trim().toUpperCase() === expectedStock
+        )) continue;
+
+        const price = extractListingPrice_(card);
+        if (price !== null) return price;
+        throw new Error(`Stock lookup found "${stock}" but its current price was missing.`);
+    }
+    throw new Error(
+        `Original listing returned 404 and no current vehicle was found for stock "${stock}".`
+    );
+}
+
+function extractListingPrice_(html) {
+    const priceContainer = html.match(
+        /<div\b[^>]*\b(?:id=["']carPrice["']|class=["'][^"']*\bcarPrice\b[^"']*["'])[^>]*>([\s\S]*?)<\/div>/i
+    );
+    if (!priceContainer) return null;
 
     const formattedPrice = priceContainer[1].match(
         /<span\b[^>]*class=["'][^"']*\bformat-price\b[^"']*["'][^>]*>\s*([\d,]+(?:\.\d{1,2})?)\s*<\/span>/i
@@ -301,11 +354,7 @@ function fetchListingPrice_(url) {
     const priceText = formattedPrice
         ? formattedPrice[1]
         : priceContainer[1].replace(/<[^>]*>/g, ' ');
-    const price = parsePrice_(priceText);
-    if (price === null) {
-        throw new Error('The vehicle page does not show a numeric current price.');
-    }
-    return price;
+    return parsePrice_(priceText);
 }
 
 function parsePrice_(value) {
