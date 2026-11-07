@@ -145,11 +145,11 @@ function runPriceCheck() {
                 }
                 changedCount++;
             } catch (error) {
-                if (error.code === 'STOCK_NOT_FOUND' && columns.status) {
+                if (error.code === 'STOCK_NOT_FOUND') {
                     trackerSheet.getRange(
                         columns.headerRow + index + 1,
-                        columns.status
-                    ).setValue('Stock Gone');
+                        3
+                    ).setValue('REVIEW');
                 }
                 errors.push(`Stock ${stock}: ${error.message}`);
             }
