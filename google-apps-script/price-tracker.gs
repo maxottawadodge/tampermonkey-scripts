@@ -134,7 +134,10 @@ function runPriceCheck() {
                     columns.headerRow + index + 1,
                     columns.price
                 ).setValue(currentPrice);
-                if (columns.status) {
+                if (
+                    columns.status &&
+                    String(row[columns.status - 1] || '').trim().toLowerCase() === 'listed'
+                ) {
                     trackerSheet.getRange(
                         columns.headerRow + index + 1,
                         columns.status
