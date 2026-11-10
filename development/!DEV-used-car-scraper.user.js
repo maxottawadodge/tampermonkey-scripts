@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.50
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.50
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.50
+// @version         1.51
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.51
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.51
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -589,32 +589,34 @@
         panel.id = 'dev-used-car-scraper';
         panel.style.cssText =
             'position:fixed;right:16px;bottom:16px;z-index:999999;' +
-            'display:flex;flex-direction:column;align-items:flex-end;gap:8px;padding:10px;' +
-            'box-sizing:border-box;width:min(420px,33vw,calc(100vw - 32px));' +
+            'display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding:6px;' +
+            'box-sizing:border-box;width:fit-content;' +
             'max-height:calc(100vh - 32px);' +
             'background:#fff;border:1px solid #bbb;border-radius:6px;' +
             'box-shadow:0 2px 10px rgba(0,0,0,.2);font:13px Arial,sans-serif;';
 
         const header = document.createElement('div');
         header.style.cssText =
-            'display:flex;align-items:center;justify-content:flex-end;gap:6px;width:100%;';
+            'display:flex;align-items:center;justify-content:flex-end;gap:6px;width:auto;';
         const toggleButton = document.createElement('button');
         toggleButton.type = 'button';
-        toggleButton.textContent = 'Used car scraper ▸';
+        toggleButton.textContent = 'Scraper ▸';
         toggleButton.setAttribute('aria-expanded', 'false');
+        toggleButton.setAttribute('aria-label', 'Expand used car scraper');
         toggleButton.style.cssText =
-            'padding:6px 10px;border:0;border-radius:4px;' +
+            'padding:6px 9px;border:0;border-radius:4px;' +
             'background:#2d6cdf;color:#fff;font-weight:600;cursor:pointer;';
         const versionLabel = document.createElement('span');
-        versionLabel.textContent = 'v1.49';
+        versionLabel.textContent = 'v1.51';
         versionLabel.style.cssText = 'color:#ddd;font-size:10px;';
+        versionLabel.hidden = true;
         header.append(toggleButton, versionLabel);
 
         const controls = document.createElement('div');
         controls.id = 'dev-used-car-scraper-controls';
         controls.hidden = true;
         controls.style.cssText =
-            'display:none;flex-direction:column;align-items:flex-end;gap:8px;' +
+            'display:none;flex-direction:column;align-items:flex-end;gap:6px;' +
             'width:100%;max-width:100%;min-width:0;box-sizing:border-box;';
         toggleButton.setAttribute('aria-controls', controls.id);
 
@@ -1052,7 +1054,16 @@
         toggleButton.addEventListener('click', () => {
             const expanded = toggleButton.getAttribute('aria-expanded') !== 'true';
             toggleButton.setAttribute('aria-expanded', String(expanded));
-            toggleButton.textContent = `Used car scraper ${expanded ? '▾' : '▸'}`;
+            toggleButton.textContent = expanded ? 'Used car scraper ▾' : 'Scraper ▸';
+            toggleButton.setAttribute(
+                'aria-label',
+                `${expanded ? 'Collapse' : 'Expand'} used car scraper`
+            );
+            panel.style.width = expanded
+                ? 'min(360px, calc(100vw - 24px))'
+                : 'fit-content';
+            header.style.width = expanded ? '100%' : 'auto';
+            versionLabel.hidden = !expanded;
             controls.hidden = !expanded;
             controls.style.display = expanded ? 'flex' : 'none';
         });

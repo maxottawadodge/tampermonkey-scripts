@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.15
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.15
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.15
+// @version      5.16
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.16
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.16
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -46,6 +46,9 @@
                 display: flex;
                 align-items: center;
                 gap: 6px;
+            }
+            #ocdj-search-mobile-toggle {
+                display: none;
             }
             #ocdj-search {
                 box-sizing: border-box;
@@ -94,6 +97,9 @@
                     padding: 8px 10px;
                     border-radius: 0 0 8px 8px;
                 }
+                #ocdj-search-row {
+                    padding-right: 38px;
+                }
                 #ocdj-search {
                     flex: 1;
                     width: 100%;
@@ -101,6 +107,37 @@
                 }
                 #ocdj-search-button {
                     display: none;
+                }
+                #ocdj-search-mobile-toggle {
+                    position: absolute;
+                    top: 8px;
+                    right: 10px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 32px;
+                    height: 32px;
+                    padding: 0;
+                    border: 0;
+                    border-radius: 5px;
+                    background: #2d6cdf;
+                    color: #fff;
+                    font-size: 19px;
+                    cursor: pointer;
+                }
+                #ocdj-search-container.mobile-collapsed {
+                    left: auto;
+                    width: auto;
+                    padding: 5px;
+                    border-radius: 8px;
+                }
+                #ocdj-search-container.mobile-collapsed #ocdj-search-row {
+                    display: none;
+                }
+                #ocdj-search-container.mobile-collapsed #ocdj-search-mobile-toggle {
+                    position: static;
+                    width: 38px;
+                    height: 34px;
                 }
                 #ocdj-search-filter-options {
                     flex-wrap: wrap;
@@ -113,6 +150,14 @@
 
         const container = document.createElement('div');
         container.id = 'ocdj-search-container';
+
+        const mobileToggle = document.createElement('button');
+        mobileToggle.id = 'ocdj-search-mobile-toggle';
+        mobileToggle.type = 'button';
+        mobileToggle.textContent = '⌕';
+        mobileToggle.title = 'Collapse inventory search';
+        mobileToggle.setAttribute('aria-label', 'Collapse inventory search');
+        mobileToggle.setAttribute('aria-expanded', 'true');
 
         const searchRow = document.createElement('div');
         searchRow.id = 'ocdj-search-row';
@@ -216,8 +261,18 @@
             }
         });
 
+        mobileToggle.addEventListener('click', () => {
+            const collapsed = container.classList.toggle('mobile-collapsed');
+            mobileToggle.textContent = collapsed ? '⌕' : '×';
+            mobileToggle.title = collapsed
+                ? 'Expand inventory search'
+                : 'Collapse inventory search';
+            mobileToggle.setAttribute('aria-label', mobileToggle.title);
+            mobileToggle.setAttribute('aria-expanded', String(!collapsed));
+        });
+
         searchRow.append(input, button, filters);
-        container.appendChild(searchRow);
+        container.append(searchRow, mobileToggle);
         document.body.appendChild(container);
 
         let lastObservedFilterId = filterState.filterId;
