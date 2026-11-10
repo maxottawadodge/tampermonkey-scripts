@@ -1,4 +1,4 @@
-// Version: 1.0.4
+// Version: 1.0.5
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -195,6 +195,7 @@ function beginInventoryScrape_(searchUrl) {
         listingIds: candidates.map(vehicle => vehicle.listingId),
         nextIndex: 0,
         addedCount: 0,
+        updatedCount: 0,
         skippedCount: 0,
         errorCount: 0,
         retryCount: 0
@@ -221,6 +222,7 @@ function processInventoryScrape_() {
         const savedState = properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
         if (!savedState) return;
         state = JSON.parse(savedState);
+        state.updatedCount = state.updatedCount || 0;
 
         const startedAt = Date.now();
         spreadsheet = SpreadsheetApp.openById(state.spreadsheetId);
@@ -237,13 +239,17 @@ function processInventoryScrape_() {
         const candidatesById = new Map(
             candidates.map(vehicle => [vehicle.listingId, vehicle])
         );
-        const existingIds = getExistingListingIds_(
+        const existingListings = getExistingListingRecords_(
             trackerSheet,
             state.headerRow,
             sheetInfo.listingIdColumn,
-            sheetInfo.urlColumn
+            sheetInfo.urlColumn,
+            sheetInfo.stockColumn,
+            sheetInfo.statusColumn
         );
         const rowsToAppend = [];
+        const stockUpdates = new Map();
+        const statusUpdates = new Map();
         let geminiRequestCount = 0;
         showInventoryScrapeProgress_(spreadsheet, state);
 
@@ -260,8 +266,20 @@ function processInventoryScrape_() {
 
             const listingId = state.listingIds[state.nextIndex++];
             const listingKey = String(listingId).toUpperCase();
-            if (existingIds.has(listingKey)) {
-                state.skippedCount++;
+            const existing = existingListings.get(listingKey);
+            if (existing) {
+                const currentVehicle = candidatesById.get(listingId);
+                const currentStock = String(currentVehicle?.stock || '').trim();
+                if (!existing.stock && currentStock) {
+                    stockUpdates.set(existing.rowNumber, currentStock);
+                    statusUpdates.set(
+                        existing.rowNumber,
+                        markInventoryFreshlyScrapedStatus_(existing.status)
+                    );
+                    state.updatedCount++;
+                } else {
+                    state.skippedCount++;
+                }
                 continue;
             }
 
@@ -295,9 +313,10 @@ function processInventoryScrape_() {
             }
 
             rowsToAppend.push(makeInventoryOutputRow_(vehicle, sheetInfo));
-            existingIds.add(listingKey);
         }
 
+        writeColumnUpdates_(trackerSheet, sheetInfo.stockColumn, stockUpdates);
+        writeColumnUpdates_(trackerSheet, sheetInfo.statusColumn, statusUpdates);
         if (rowsToAppend.length) {
             const firstRow = trackerSheet.getLastRow() + 1;
             trackerSheet.getRange(
@@ -315,7 +334,7 @@ function processInventoryScrape_() {
             properties.setProperty(INVENTORY_SCRAPER_CONFIG.stateProperty, JSON.stringify(state));
             scheduleInventoryScrapeContinuation_();
             spreadsheet.toast(
-                `Inventory scrape: ${state.nextIndex}/${state.listingIds.length}. Added ${state.addedCount}; skipped ${state.skippedCount}. Continuing shortly.`,
+                `Inventory scrape: ${state.nextIndex}/${state.listingIds.length}. Added ${state.addedCount}; updated ${state.updatedCount}; skipped ${state.skippedCount}. Continuing shortly.`,
                 'Inventory Scraper',
                 10
             );
@@ -325,7 +344,7 @@ function processInventoryScrape_() {
         properties.deleteProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
         clearInventoryScrapeTriggers_();
         spreadsheet.toast(
-            `Inventory scrape complete. Added ${state.addedCount}; skipped ${state.skippedCount}; errors ${state.errorCount}.`,
+            `Inventory scrape complete. Added ${state.addedCount}; updated ${state.updatedCount}; skipped ${state.skippedCount}; errors ${state.errorCount}.`,
             'Inventory Scraper',
             15
         );
@@ -372,27 +391,44 @@ function getInventoryScraperSheetInfo_(sheet) {
         headers,
         headerIndexes,
         listingIdColumn: headerIndexes.get('listingid') + 1,
-        urlColumn: headerIndexes.get('url') + 1
+        urlColumn: headerIndexes.get('url') + 1,
+        stockColumn: headerIndexes.get('stock') + 1,
+        statusColumn: headerIndexes.get('status') + 1
     };
 }
 
-function getExistingListingIds_(sheet, headerRow, listingIdColumn, urlColumn) {
+function getExistingListingRecords_(
+    sheet,
+    headerRow,
+    listingIdColumn,
+    urlColumn,
+    stockColumn,
+    statusColumn
+) {
     const lastRow = sheet.getLastRow();
-    if (lastRow <= headerRow) return new Set();
+    if (lastRow <= headerRow) return new Map();
     const rowCount = lastRow - headerRow;
-    const listingIds = sheet
-        .getRange(headerRow + 1, listingIdColumn, rowCount, 1)
-        .getDisplayValues()
-        .flat();
-    const urls = sheet
-        .getRange(headerRow + 1, urlColumn, rowCount, 1)
-        .getDisplayValues()
-        .flat();
-    return new Set(listingIds.map((value, index) =>
-        String(value || extractListingIdFromUrl_(urls[index]) || '')
-            .trim()
-            .toUpperCase()
-    ).filter(Boolean));
+    const rows = sheet.getRange(headerRow + 1, 1, rowCount, sheet.getLastColumn())
+        .getDisplayValues();
+    const records = new Map();
+    rows.forEach((row, index) => {
+        const listingId = String(
+            row[listingIdColumn - 1] || extractListingIdFromUrl_(row[urlColumn - 1]) || ''
+        ).trim().toUpperCase();
+        if (!listingId) return;
+        records.set(listingId, {
+            rowNumber: headerRow + index + 1,
+            stock: String(row[stockColumn - 1] || '').trim(),
+            status: String(row[statusColumn - 1] || '').trim()
+        });
+    });
+    return records;
+}
+
+function markInventoryFreshlyScrapedStatus_(status) {
+    const preservedStatuses = splitStatusValues_(status)
+        .filter(value => !['in transit', 'freshly scraped'].includes(value.toLowerCase()));
+    return [...preservedStatuses, 'Freshly Scraped'].join(', ');
 }
 
 function makeInventoryOutputRow_(vehicle, sheetInfo) {
@@ -518,7 +554,8 @@ function addInventoryCandidatesFromHtml_(html, vehicles) {
         const listingId = listingLink.id;
         if (vehicles.has(listingId)) return;
         const url = normalizeInventoryUrl_(listingLink.href);
-        const reportedStock = attributes['data-stock-number'] || '';
+        const reportedStock = attributes['data-stock-number'] ||
+            extractInventoryStockFromCard_(cardHtml);
         const stockMatchesListingId = reportedStock.toUpperCase() === listingId.toUpperCase();
         const year = attributes['data-year'] || '';
         const make = attributes['data-make'] || '';
@@ -554,6 +591,11 @@ function addInventoryCandidatesFromHtml_(html, vehicles) {
             descriptionBody: ''
         });
     });
+}
+
+function extractInventoryStockFromCard_(html) {
+    const stockText = extractInventoryClassText_(html, 'divStockTextSelect');
+    return stockText.match(/\bStock\s*:\s*([A-Z0-9-]+)/i)?.[1] || '';
 }
 
 function parseInventoryAttributes_(tag) {

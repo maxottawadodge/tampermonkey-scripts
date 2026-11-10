@@ -50,8 +50,10 @@ and appends price changes to a `Price History` tab.
    the editor opens with the saved URL so you can keep or change it. **Scrape new
    inventory** uses that saved URL for manual runs; choose **Install daily
    inventory scrape (8 AM)** to schedule it. New vehicles are appended by
-   Listing ID; existing IDs are skipped. Progress appears in the spreadsheet
-   toast, and longer scrapes resume automatically. The script processes the
+   Listing ID; existing IDs are skipped unless their Stock cell is blank and a
+   stock number has since appeared on the site, in which case that row is
+   updated and its status refreshed. Progress appears in the spreadsheet toast,
+   and longer scrapes resume automatically. The script processes the
    listings returned by that URL and follows every **Next page** link through
    the last page. Use separate search URLs for different inventory categories
    or filters.
