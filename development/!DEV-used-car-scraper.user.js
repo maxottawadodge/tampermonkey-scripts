@@ -18,7 +18,7 @@
     'use strict';
 
     const columns = [
-        ['Status', () => ''],
+        ['Status', vehicle => vehicle.status],
         ['Listed On', () => ''],
         ['Mrkt', () => ''],
         ['Stock', vehicle => vehicle.stock],
@@ -192,6 +192,7 @@
                     .replace(/\D/g, ''),
                 url: key,
                 stock: cleanText(input.dataset.stockNumber),
+                status: 'Freshly Scraped',
                 vehicleType: 'Car/Truck',
                 vin,
                 windowStickerUrl: getWindowStickerUrl(vin),
