@@ -1,10 +1,15 @@
-// Version: 1.0.0
+// Version: 1.1.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
     spreadsheetIdProperty: 'PRICE_TRACKER_SPREADSHEET_ID',
+    progressProperty: 'PRICE_TRACKER_SCAN_PROGRESS',
     dailyHandler: 'runPriceCheck',
+    continuationHandler: 'continuePriceCheck',
     scanHours: [8, 10, 12, 14, 16, 18, 20],
+    maxRunMillis: 4 * 60 * 1000,
+    continuationDelayMillis: 60 * 1000,
+    progressUpdateInterval: 5,
     historyHeaders: [
         'Timestamp',
         'Stock',
@@ -68,58 +73,123 @@ function installDailyPriceCheck() {
 }
 
 function runPriceCheck() {
+    processPriceCheck_(false);
+}
+
+function continuePriceCheck() {
+    processPriceCheck_(true);
+}
+
+function processPriceCheck_(continuationOnly) {
     const lock = LockService.getScriptLock();
     if (!lock.tryLock(1000)) {
         throw new Error('A price scan is already running.');
     }
 
     try {
-        const spreadsheet = getTrackerSpreadsheet_();
-        const trackerSheet = getTrackerSheet_(spreadsheet);
-        const columns = getTrackerColumns_(trackerSheet);
-        const lastRow = trackerSheet.getLastRow();
-        if (lastRow <= columns.headerRow) {
-            spreadsheet.toast('No vehicle rows found to check.');
-            return;
+        const startedAt = Date.now();
+        const properties = PropertiesService.getScriptProperties();
+        const savedProgress = properties.getProperty(PRICE_TRACKER_CONFIG.progressProperty);
+        let progress = savedProgress ? JSON.parse(savedProgress) : null;
+        if (!progress) {
+            if (continuationOnly) return;
+
+            const spreadsheet = getTrackerSpreadsheet_();
+            const trackerSheet = getTrackerSheet_(spreadsheet);
+            const columns = getTrackerColumns_(trackerSheet);
+            const lastRow = trackerSheet.getLastRow();
+            if (lastRow <= columns.headerRow) {
+                spreadsheet.toast('No vehicle rows found to check.');
+                return;
+            }
+
+            progress = {
+                spreadsheetId: spreadsheet.getId(),
+                trackerSheetId: trackerSheet.getSheetId(),
+                headerRow: columns.headerRow,
+                totalRows: lastRow - columns.headerRow,
+                nextIndex: 0,
+                timestamp: new Date().toISOString(),
+                checkedCount: 0,
+                changedCount: 0,
+                errorCount: 0,
+                seenStocks: []
+            };
+            properties.setProperty(
+                PRICE_TRACKER_CONFIG.progressProperty,
+                JSON.stringify(progress)
+            );
         }
 
-        const rowCount = lastRow - columns.headerRow;
+        const spreadsheet = SpreadsheetApp.openById(progress.spreadsheetId);
+        const trackerSheet = spreadsheet.getSheets().find(
+            sheet => String(sheet.getSheetId()) === String(progress.trackerSheetId)
+        );
+        if (!trackerSheet) {
+            properties.deleteProperty(PRICE_TRACKER_CONFIG.progressProperty);
+            clearPriceCheckContinuationTriggers_();
+            throw new Error('The saved tracker tab no longer exists. Select it and set it again.');
+        }
+        const columns = getTrackerColumns_(trackerSheet);
+        if (columns.headerRow !== progress.headerRow) {
+            properties.deleteProperty(PRICE_TRACKER_CONFIG.progressProperty);
+            clearPriceCheckContinuationTriggers_();
+            throw new Error('The tracker header changed during a scan. Start the scan again.');
+        }
+
         const rows = trackerSheet.getRange(
-            columns.headerRow + 1,
+            progress.headerRow + 1,
             1,
-            rowCount,
+            progress.totalRows,
             trackerSheet.getLastColumn()
         ).getValues();
         const historySheet = getHistorySheet_(spreadsheet);
-        const timestamp = new Date();
+        const timestamp = new Date(progress.timestamp);
         const historyEntries = [];
-        const errors = [];
-        const seenStocks = new Set();
-        let checkedCount = 0;
-        let changedCount = 0;
+        const priceUpdates = new Map();
+        const statusUpdates = new Map();
+        const seenStocks = new Set(progress.seenStocks);
         let requestCount = 0;
 
-        rows.forEach((row, index) => {
+        if (progress.nextIndex === 0) {
+            showPriceCheckProgress_(spreadsheet, progress);
+        }
+
+        while (
+            progress.nextIndex < progress.totalRows &&
+            Date.now() - startedAt < PRICE_TRACKER_CONFIG.maxRunMillis
+        ) {
+            if (
+                progress.nextIndex > 0 &&
+                progress.nextIndex % PRICE_TRACKER_CONFIG.progressUpdateInterval === 0
+            ) {
+                showPriceCheckProgress_(spreadsheet, progress);
+            }
+
+            const index = progress.nextIndex++;
+            const row = rows[index];
             if (
                 columns.status &&
                 splitStatusValues_(row[columns.status - 1])
                     .some(value => value.toLowerCase() === 'gone')
             ) {
-                return;
+                continue;
             }
 
             const stock = String(row[columns.stock - 1] || '').trim();
             const url = String(row[columns.url - 1] || '').trim();
-            if (!stock && !url) return;
+            if (!stock && !url) continue;
             if (!stock || !url) {
-                errors.push(`Row ${columns.headerRow + index + 1} is missing Stock or URL.`);
-                return;
+                progress.errorCount++;
+                Logger.log(`Price scan warning: Row ${progress.headerRow + index + 1} is missing Stock or URL.`);
+                continue;
             }
 
             const stockKey = stock.toUpperCase();
             if (seenStocks.has(stockKey)) {
-                errors.push(`Duplicate stock number "${stock}" was skipped.`);
-                return;
+                progress.errorCount++;
+                Logger.log(`Price scan warning: Duplicate stock number "${stock}" was skipped.`);
+                continue;
             }
             seenStocks.add(stockKey);
 
@@ -127,9 +197,9 @@ function runPriceCheck() {
                 if (requestCount > 0) Utilities.sleep(150);
                 requestCount++;
                 const currentPrice = fetchListingPrice_(url, stock);
-                checkedCount++;
+                progress.checkedCount++;
                 const previousPrice = parsePrice_(row[columns.price - 1]);
-                if (previousPrice === currentPrice) return;
+                if (previousPrice === currentPrice) continue;
 
                 const vehicle = formatVehicleName_(row, columns);
                 historyEntries.push([
@@ -141,21 +211,19 @@ function runPriceCheck() {
                     url,
                     previousPrice === null ? 'Baseline' : 'Price change'
                 ]);
-                trackerSheet.getRange(
-                    columns.headerRow + index + 1,
-                    columns.price
-                ).setValue(currentPrice);
+                const sheetRow = progress.headerRow + index + 1;
+                priceUpdates.set(sheetRow, currentPrice);
                 if (
                     columns.status &&
                     splitStatusValues_(row[columns.status - 1])
                         .some(value => value.toLowerCase() === 'listed')
                 ) {
-                    trackerSheet.getRange(
-                        columns.headerRow + index + 1,
-                        columns.status
-                    ).setValue(addStatusValue_(row[columns.status - 1], 'Update Price'));
+                    statusUpdates.set(
+                        sheetRow,
+                        addStatusValue_(row[columns.status - 1], 'Update Price')
+                    );
                 }
-                changedCount++;
+                progress.changedCount++;
             } catch (error) {
                 if (error.code === 'STOCK_NOT_FOUND' && columns.status) {
                     const status = row[columns.status - 1];
@@ -163,14 +231,21 @@ function runPriceCheck() {
                         .some(value => value.toLowerCase() === 'sold')
                         ? 'Gone'
                         : 'Review';
-                    trackerSheet.getRange(
-                        columns.headerRow + index + 1,
-                        columns.status
-                    ).setValue(addStatusValue_(status, missingStockStatus));
+                    statusUpdates.set(
+                        progress.headerRow + index + 1,
+                        addStatusValue_(status, missingStockStatus)
+                    );
                 }
-                errors.push(`Stock ${stock}: ${error.message}`);
+                progress.errorCount++;
+                Logger.log(`Price scan warning: Stock ${stock}: ${error.message}`);
             }
-        });
+
+        }
+
+        writeColumnUpdates_(trackerSheet, columns.price, priceUpdates);
+        if (columns.status) {
+            writeColumnUpdates_(trackerSheet, columns.status, statusUpdates);
+        }
 
         if (historyEntries.length) {
             historySheet.getRange(
@@ -185,18 +260,80 @@ function runPriceCheck() {
         }
 
         SpreadsheetApp.flush();
+        progress.seenStocks = [...seenStocks];
+        if (progress.nextIndex < progress.totalRows) {
+            properties.setProperty(
+                PRICE_TRACKER_CONFIG.progressProperty,
+                JSON.stringify(progress)
+            );
+            schedulePriceCheckContinuation_();
+            spreadsheet.toast(
+                `Price scan progress: ${progress.nextIndex}/${progress.totalRows}. Continuing shortly.`,
+                'Price Tracker',
+                10
+            );
+            return;
+        }
+
+        properties.deleteProperty(PRICE_TRACKER_CONFIG.progressProperty);
+        clearPriceCheckContinuationTriggers_();
         const summary =
-            `Checked ${checkedCount} vehicles; updated ${changedCount} prices.` +
-            (errors.length ? ` ${errors.length} row(s) need attention; see Apps Script execution logs.` : '');
+            `Checked ${progress.checkedCount} vehicles; updated ${progress.changedCount} prices.` +
+            (progress.errorCount ? ` ${progress.errorCount} row(s) need attention; see Apps Script execution logs.` : '');
         Logger.log(summary);
-        errors.forEach(error => Logger.log(`Price scan warning: ${error}`));
         spreadsheet.toast(summary, 'Price Tracker', 10);
 
-        if (checkedCount === 0 && errors.length) {
-            throw new Error(`No vehicle prices could be checked. ${errors.join(' ')}`);
+        if (progress.checkedCount === 0 && progress.errorCount) {
+            throw new Error('No vehicle prices could be checked. See Apps Script execution logs for row warnings.');
         }
     } finally {
         lock.releaseLock();
+    }
+}
+
+function showPriceCheckProgress_(spreadsheet, progress) {
+    spreadsheet.toast(
+        `Price scan progress: ${progress.nextIndex}/${progress.totalRows}`,
+        'Price Tracker',
+        5
+    );
+}
+
+function schedulePriceCheckContinuation_() {
+    clearPriceCheckContinuationTriggers_();
+    ScriptApp.newTrigger(PRICE_TRACKER_CONFIG.continuationHandler)
+        .timeBased()
+        .after(PRICE_TRACKER_CONFIG.continuationDelayMillis)
+        .create();
+}
+
+function clearPriceCheckContinuationTriggers_() {
+    ScriptApp.getProjectTriggers()
+        .filter(trigger =>
+            trigger.getHandlerFunction() === PRICE_TRACKER_CONFIG.continuationHandler
+        )
+        .forEach(trigger => ScriptApp.deleteTrigger(trigger));
+}
+
+function writeColumnUpdates_(sheet, column, updates) {
+    const entries = [...updates.entries()].sort((left, right) => left[0] - right[0]);
+    let entryIndex = 0;
+    while (entryIndex < entries.length) {
+        const startRow = entries[entryIndex][0];
+        const values = [[entries[entryIndex][1]]];
+        let previousRow = startRow;
+        entryIndex++;
+
+        while (
+            entryIndex < entries.length &&
+            entries[entryIndex][0] === previousRow + 1
+        ) {
+            values.push([entries[entryIndex][1]]);
+            previousRow = entries[entryIndex][0];
+            entryIndex++;
+        }
+
+        sheet.getRange(startRow, column, values.length, 1).setValues(values);
     }
 }
 
