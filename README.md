@@ -30,7 +30,9 @@ checks each vehicle URL in the selected tracker tab, updates its `Price` cell,
 and appends price changes to a `Price History` tab.
 
 1. Open the tracker spreadsheet and choose **Extensions > Apps Script**.
-2. Replace the editor contents with `google-apps-script/price-tracker.gs` and save.
+2. Replace the editor contents with `google-apps-script/price-tracker.gs`. Add a
+   second Apps Script file named `inventory-scraper.gs` using
+   `google-apps-script/inventory-scraper.gs`, then save the project.
 3. Reload the spreadsheet. Select the tracker tab, then choose **Price Tracker >
    Set active tab as tracker**.
 4. Choose **Price Tracker > Run price scan now** and approve the requested
@@ -39,8 +41,22 @@ and appends price changes to a `Price History` tab.
    run about every two hours from 8 AM through 8 PM in the Apps Script project's
    time zone. Long scans show progress and resume automatically in smaller runs.
    Use **Run price scan now** to start or resume a scan immediately.
+6. Choose **Price Tracker > Fill blank Listing IDs** to fill empty Listing ID
+   cells from each row's URL. IDs in the URL are extracted directly; pages are
+   fetched only when the URL does not contain a listing ID.
+7. Choose **Price Tracker > Set inventory scraper Gemini key** and enter your
+   Gemini API key. Set the search URL with **Set inventory scraper search URL**.
+   Choose **Scrape new inventory** to run it manually, or choose **Install daily
+   inventory scrape (8 AM)** to schedule it. New vehicles are appended by
+   Listing ID; existing IDs are skipped. Progress appears in the spreadsheet
+   toast, and longer scrapes resume automatically. The script processes the
+   listings returned by that URL; use separate search URLs for different
+   inventory categories or filters.
 
 The tracker tab must have a header row containing `Stock`, `URL`, and `Price`.
+Add a `Listing ID` header to use **Fill blank Listing IDs**.
+The inventory scraper requires the full 24-column scraper header row, including
+`Listing ID`.
 Price history records include a timestamp, stock number, vehicle, previous and
 current prices, URL, and whether the row is a baseline or a price change.
 Rows with a `Status` column get `Update Price` added alongside `Listed` when

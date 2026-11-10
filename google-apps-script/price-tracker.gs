@@ -1,4 +1,4 @@
-// Version: 1.1.0
+// Version: 1.1.3
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -28,6 +28,13 @@ function onOpen() {
         .addItem('Install scans (8 AM-8 PM, every 2 hours)', 'installDailyPriceCheck')
         .addSeparator()
         .addItem('Run price scan now', 'runPriceCheck')
+        .addItem('Fill blank Listing IDs', 'fillBlankListingIds')
+        .addSeparator()
+        .addItem('Set inventory scraper Gemini key', 'setInventoryScraperGeminiKey')
+        .addItem('Set inventory scraper search URL', 'setInventoryScraperSearchUrl')
+        .addItem('Scrape new inventory', 'startInventoryScrape')
+        .addItem('Install daily inventory scrape (8 AM)', 'installDailyInventoryScrape')
+        .addItem('Continue inventory scrape now', 'continueInventoryScrape')
         .addToUi();
 }
 
@@ -70,6 +77,125 @@ function installDailyPriceCheck() {
     spreadsheet.toast(
         `Price scans installed for "${trackerSheet.getName()}" every 2 hours from about 8 AM through 8 PM.`
     );
+}
+
+function fillBlankListingIds() {
+    const lock = LockService.getScriptLock();
+    if (!lock.tryLock(1000)) {
+        throw new Error('Another price tracker task is already running.');
+    }
+
+    try {
+        const spreadsheet = getTrackerSpreadsheet_();
+        const trackerSheet = getTrackerSheet_(spreadsheet);
+        const columns = getTrackerColumns_(trackerSheet);
+        const lastColumn = trackerSheet.getLastColumn();
+        const headers = trackerSheet
+            .getRange(columns.headerRow, 1, 1, lastColumn)
+            .getDisplayValues()[0]
+            .map(normalizeHeader_);
+        const urlColumn = headers.indexOf('url') + 1;
+        const listingIdColumn = headers.indexOf('listingid') + 1;
+        if (!urlColumn || !listingIdColumn) {
+            spreadsheet.toast('Add a Listing ID header to the tracker tab first.');
+            return;
+        }
+
+        const lastRow = trackerSheet.getLastRow();
+        if (lastRow <= columns.headerRow) {
+            spreadsheet.toast('No vehicle rows found to check.');
+            return;
+        }
+
+        const rowCount = lastRow - columns.headerRow;
+        const rows = trackerSheet.getRange(
+            columns.headerRow + 1,
+            1,
+            rowCount,
+            lastColumn
+        ).getDisplayValues();
+        const candidates = rows.flatMap((row, index) => {
+            const listingId = String(row[listingIdColumn - 1] || '').trim();
+            const url = String(row[urlColumn - 1] || '').trim();
+            return !listingId && url
+                ? [{ rowNumber: columns.headerRow + index + 1, url }]
+                : [];
+        });
+        if (!candidates.length) {
+            spreadsheet.toast('Every vehicle with a URL already has a Listing ID.');
+            return;
+        }
+
+        const updates = new Map();
+        let notFoundCount = 0;
+        spreadsheet.toast(`Filling Listing IDs: 0/${candidates.length}`);
+        candidates.forEach((candidate, index) => {
+            let listingId = extractListingIdFromUrl_(candidate.url);
+            if (!listingId) {
+                try {
+                    listingId = fetchListingIdFromPage_(candidate.url);
+                } catch (error) {
+                    Logger.log(`Listing ID lookup failed for row ${candidate.rowNumber}: ${error.message}`);
+                }
+            }
+
+            if (listingId) {
+                updates.set(candidate.rowNumber, listingId);
+            } else {
+                notFoundCount++;
+            }
+
+            const completed = index + 1;
+            if (
+                completed % PRICE_TRACKER_CONFIG.progressUpdateInterval === 0 ||
+                completed === candidates.length
+            ) {
+                spreadsheet.toast(`Filling Listing IDs: ${completed}/${candidates.length}`);
+            }
+        });
+
+        writeColumnUpdates_(trackerSheet, listingIdColumn, updates);
+        SpreadsheetApp.flush();
+        spreadsheet.toast(
+            `Filled ${updates.size} Listing ID(s); ${notFoundCount} URL(s) had no ID to extract.`,
+            'Price Tracker',
+            10
+        );
+    } finally {
+        lock.releaseLock();
+    }
+}
+
+function extractListingIdFromUrl_(url) {
+    return String(url).match(/(?:^|\/)[^/?#]*?id(\d+)\.html(?:[?#]|$)/i)?.[1] || '';
+}
+
+function fetchListingIdFromPage_(url) {
+    if (!/^https:\/\/www\.ottawachryslerjeepdodge\.com\//i.test(url)) {
+        return '';
+    }
+
+    const response = UrlFetchApp.fetch(url, {
+        followRedirects: true,
+        muteHttpExceptions: true,
+        headers: { Accept: 'text/html' }
+    });
+    const responseCode = response.getResponseCode();
+    if (responseCode < 200 || responseCode >= 300) {
+        throw new Error(`Vehicle page returned HTTP ${responseCode}.`);
+    }
+
+    const html = response.getContentText();
+    const canonicalTag = (html.match(/<link\b[^>]*>/gi) || [])
+        .find(tag => /\brel=["'][^"']*\bcanonical\b/i.test(tag));
+    const canonicalUrl = canonicalTag?.match(/\bhref=["']([^"']+)["']/i)?.[1] || '';
+    if (canonicalUrl) {
+        const listingId = extractListingIdFromUrl_(canonicalUrl);
+        if (listingId) return listingId;
+    }
+
+    const carId = html.match(/\bdata-carid=["'](\d+)["']/i)?.[1];
+    return carId || '';
 }
 
 function runPriceCheck() {
