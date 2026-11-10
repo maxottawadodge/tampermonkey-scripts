@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.18
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.18
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.18
+// @version      5.19
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.19
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.19
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -283,7 +283,11 @@
         }
 
         mobileToggle.addEventListener('click', () => {
-            setMobileCollapsed(!container.classList.contains('mobile-collapsed'));
+            const wasCollapsed = container.classList.contains('mobile-collapsed');
+            setMobileCollapsed(!wasCollapsed);
+            if (wasCollapsed && window.innerWidth <= 600) {
+                input.focus({ preventScroll: true });
+            }
         });
 
         searchRow.append(input, button, filters);
@@ -308,11 +312,10 @@
         filterObserver.observe(document.body, { childList: true, subtree: true });
         window.addEventListener('popstate', syncFiltersFromUrl);
         window.setTimeout(() => {
-            if (window.innerWidth <= 600 &&
-                container.classList.contains('mobile-collapsed')) {
-                setMobileCollapsed(false);
+            if (window.innerWidth > 600 ||
+                !container.classList.contains('mobile-collapsed')) {
+                input.focus({ preventScroll: true });
             }
-            input.focus({ preventScroll: true });
         }, 250);
     }
 
