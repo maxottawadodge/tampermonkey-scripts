@@ -35,9 +35,9 @@ and appends price changes to a `Price History` tab.
    Set active tab as tracker**.
 4. Choose **Price Tracker > Run price scan now** and approve the requested
    spreadsheet and external request permissions.
-5. Choose **Price Tracker > Install daily scan (8 AM)**. The scan runs daily
-   around 8 AM in the Apps Script project's time zone. Use **Run price scan now**
-   to test it immediately.
+5. Choose **Price Tracker > Install scans (8 AM-8 PM, every 2 hours)**. Scans
+   run about every two hours from 8 AM through 8 PM in the Apps Script project's
+   time zone. Use **Run price scan now** to test it immediately.
 
 The tracker tab must have a header row containing `Stock`, `URL`, and `Price`.
 Price history records include a timestamp, stock number, vehicle, previous and

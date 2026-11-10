@@ -1,9 +1,10 @@
+// Version: 1.0.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
     spreadsheetIdProperty: 'PRICE_TRACKER_SPREADSHEET_ID',
     dailyHandler: 'runPriceCheck',
-    dailyHour: 8,
+    scanHours: [8, 10, 12, 14, 16, 18, 20],
     historyHeaders: [
         'Timestamp',
         'Stock',
@@ -19,7 +20,7 @@ function onOpen() {
     SpreadsheetApp.getUi()
         .createMenu('Price Tracker')
         .addItem('Set active tab as tracker', 'setPriceTrackerSheet')
-        .addItem('Install daily scan (8 AM)', 'installDailyPriceCheck')
+        .addItem('Install scans (8 AM-8 PM, every 2 hours)', 'installDailyPriceCheck')
         .addSeparator()
         .addItem('Run price scan now', 'runPriceCheck')
         .addToUi();
@@ -52,15 +53,17 @@ function installDailyPriceCheck() {
         )
         .forEach(trigger => ScriptApp.deleteTrigger(trigger));
 
-    ScriptApp.newTrigger(PRICE_TRACKER_CONFIG.dailyHandler)
-        .timeBased()
-        .everyDays(1)
-        .atHour(PRICE_TRACKER_CONFIG.dailyHour)
-        .inTimezone(Session.getScriptTimeZone())
-        .create();
+    PRICE_TRACKER_CONFIG.scanHours.forEach(hour => {
+        ScriptApp.newTrigger(PRICE_TRACKER_CONFIG.dailyHandler)
+            .timeBased()
+            .everyDays(1)
+            .atHour(hour)
+            .inTimezone(Session.getScriptTimeZone())
+            .create();
+    });
 
     spreadsheet.toast(
-        `Daily price scans installed for "${trackerSheet.getName()}" at about 8 AM.`
+        `Price scans installed for "${trackerSheet.getName()}" every 2 hours from about 8 AM through 8 PM.`
     );
 }
 
