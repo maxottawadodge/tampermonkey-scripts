@@ -30,9 +30,10 @@ checks each vehicle URL in the selected tracker tab, updates its `Price` cell,
 and appends price changes to a `Price History` tab.
 
 1. Open the tracker spreadsheet and choose **Extensions > Apps Script**.
-2. Replace the editor contents with `google-apps-script/price-tracker.gs`. Add a
-   second Apps Script file named `inventory-scraper.gs` using
-   `google-apps-script/inventory-scraper.gs`, then save the project.
+2. Replace the editor contents with `google-apps-script/price-tracker.gs`. Add
+   `inventory-scraper.gs` using `google-apps-script/inventory-scraper.gs` and
+   an HTML file named `inventory-scraper-dialog.html` using
+   `google-apps-script/inventory-scraper-dialog.html`, then save the project.
 3. Reload the spreadsheet. Select the tracker tab, then choose **Price Tracker >
    Set active tab as tracker**.
 4. Choose **Price Tracker > Run price scan now** and approve the requested
@@ -45,8 +46,9 @@ and appends price changes to a `Price History` tab.
    cells from each row's URL. IDs in the URL are extracted directly; pages are
    fetched only when the URL does not contain a listing ID.
 7. Choose **Price Tracker > Set inventory scraper Gemini key** and enter your
-   Gemini API key. Set the search URL with **Set inventory scraper search URL**.
-   Choose **Scrape new inventory** to run it manually, or choose **Install daily
+   Gemini API key. Set the search URL with **Set inventory scraper search URL**;
+   the editor opens with the saved URL so you can keep or change it. **Scrape new
+   inventory** uses that saved URL for manual runs; choose **Install daily
    inventory scrape (8 AM)** to schedule it. New vehicles are appended by
    Listing ID; existing IDs are skipped. Progress appears in the spreadsheet
    toast, and longer scrapes resume automatically. The script processes the

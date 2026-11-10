@@ -1,4 +1,4 @@
-// Version: 1.0.3
+// Version: 1.0.4
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -46,18 +46,18 @@ function setInventoryScraperGeminiKey() {
 }
 
 function setInventoryScraperSearchUrl() {
-    const ui = SpreadsheetApp.getUi();
-    const response = ui.prompt(
-        'Inventory scraper search URL',
-        'Enter the dealership inventory search URL to use for daily scrapes.',
-        ui.ButtonSet.OK_CANCEL
-    );
-    if (response.getSelectedButton() !== ui.Button.OK) return;
+    const template = HtmlService.createTemplateFromFile('inventory-scraper-dialog');
+    template.searchUrl = PropertiesService.getScriptProperties().getProperty(
+        INVENTORY_SCRAPER_CONFIG.searchUrlProperty
+    ) || '';
+    const dialog = template.evaluate().setWidth(560).setHeight(190);
+    SpreadsheetApp.getUi().showModalDialog(dialog, 'Inventory scraper search URL');
+}
 
-    const searchUrl = response.getResponseText().trim();
+function saveInventoryScraperSearchUrl(searchUrl) {
+    searchUrl = String(searchUrl || '').trim();
     if (!isInventorySearchUrl_(searchUrl)) {
-        ui.alert('Use an Ottawa Chrysler Jeep Dodge inventory search URL.');
-        return;
+        throw new Error('Use an Ottawa Chrysler Jeep Dodge inventory search URL.');
     }
     PropertiesService.getScriptProperties().setProperty(
         INVENTORY_SCRAPER_CONFIG.searchUrlProperty,
@@ -128,24 +128,14 @@ function startInventoryScrape() {
         return;
     }
 
-    const ui = SpreadsheetApp.getUi();
-    const response = ui.prompt(
-        'Scrape inventory results',
-        'Paste a dealership inventory search URL. All result pages will be scanned.',
-        ui.ButtonSet.OK_CANCEL
-    );
-    if (response.getSelectedButton() !== ui.Button.OK) return;
-
-    const searchUrl = response.getResponseText().trim();
+    const searchUrl = properties.getProperty(INVENTORY_SCRAPER_CONFIG.searchUrlProperty);
     if (!isInventorySearchUrl_(searchUrl)) {
-        ui.alert('Use an Ottawa Chrysler Jeep Dodge inventory search URL.');
+        SpreadsheetApp.getUi().alert(
+            'Set a valid inventory scraper search URL before starting a scrape.'
+        );
         return;
     }
 
-    PropertiesService.getScriptProperties().setProperty(
-        INVENTORY_SCRAPER_CONFIG.searchUrlProperty,
-        searchUrl
-    );
     beginInventoryScrape_(searchUrl);
 }
 
