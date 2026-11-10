@@ -1,4 +1,4 @@
-// Version: 1.1.6
+// Version: 1.1.7
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -87,7 +87,7 @@ function onOpen() {
             `${inventoryScansAreEnabled ? '✅ ' : ''}Install daily inventory scrape (8 AM)`,
             'installDailyInventoryScrape'
         )
-        .addItem('Continue inventory scrape now', 'continueInventoryScrape')
+        .addItem('Resume inventory scrape', 'continueInventoryScrape')
         .addToUi();
 }
 

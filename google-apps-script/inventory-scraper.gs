@@ -1,4 +1,4 @@
-// Version: 1.0.6
+// Version: 1.0.7
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -112,13 +112,7 @@ function installDailyInventoryScrape() {
 }
 
 function startInventoryScrape() {
-    const properties = PropertiesService.getScriptProperties();
-    if (properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty)) {
-        SpreadsheetApp.getActiveSpreadsheet().toast(
-            'An inventory scrape is already in progress. Resume it from the Price Tracker menu.'
-        );
-        return;
-    }
+    if (resumeInventoryScrapeIfRunning_()) return;
 
     const apiKey = PropertiesService.getUserProperties().getProperty(
         INVENTORY_SCRAPER_CONFIG.apiKeyProperty
@@ -142,13 +136,7 @@ function startInventoryScrape() {
 }
 
 function fillBlankInventoryDescriptions() {
-    const properties = PropertiesService.getScriptProperties();
-    if (properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty)) {
-        SpreadsheetApp.getActiveSpreadsheet().toast(
-            'An inventory scrape is already in progress. Resume it from the Price Tracker menu.'
-        );
-        return;
-    }
+    if (resumeInventoryScrapeIfRunning_()) return;
 
     const apiKey = PropertiesService.getUserProperties().getProperty(
         INVENTORY_SCRAPER_CONFIG.apiKeyProperty
@@ -261,6 +249,22 @@ function beginInventoryScrape_(searchUrl, descriptionOnly = false) {
 
 function continueInventoryScrape() {
     processInventoryScrape_();
+}
+
+function resumeInventoryScrapeIfRunning_() {
+    if (!PropertiesService.getScriptProperties().getProperty(
+        INVENTORY_SCRAPER_CONFIG.stateProperty
+    )) {
+        return false;
+    }
+
+    SpreadsheetApp.getActiveSpreadsheet().toast(
+        'Resuming the saved inventory scrape.',
+        'Inventory Scraper',
+        10
+    );
+    continueInventoryScrape();
+    return true;
 }
 
 function processInventoryScrape_() {
