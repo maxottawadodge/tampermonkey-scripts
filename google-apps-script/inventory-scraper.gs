@@ -1,4 +1,4 @@
-// Version: 1.0.5
+// Version: 1.0.6
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -12,6 +12,8 @@ const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     continuationDelayMillis: 60 * 1000,
     progressUpdateInterval: 5,
     geminiRequestDelayMillis: 1500,
+    geminiRetryDelayMillis: 1000,
+    geminiMaxAttempts: 3,
     dealershipOrigin: 'https://www.ottawachryslerjeepdodge.com',
     geminiEndpoint: 'https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent'
 });
@@ -139,6 +141,35 @@ function startInventoryScrape() {
     beginInventoryScrape_(searchUrl);
 }
 
+function fillBlankInventoryDescriptions() {
+    const properties = PropertiesService.getScriptProperties();
+    if (properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty)) {
+        SpreadsheetApp.getActiveSpreadsheet().toast(
+            'An inventory scrape is already in progress. Resume it from the Price Tracker menu.'
+        );
+        return;
+    }
+
+    const apiKey = PropertiesService.getUserProperties().getProperty(
+        INVENTORY_SCRAPER_CONFIG.apiKeyProperty
+    );
+    if (!apiKey) {
+        SpreadsheetApp.getUi().alert(
+            'Set the inventory scraper Gemini API key from the Price Tracker menu first.'
+        );
+        return;
+    }
+
+    const searchUrl = properties.getProperty(INVENTORY_SCRAPER_CONFIG.searchUrlProperty);
+    if (!isInventorySearchUrl_(searchUrl)) {
+        SpreadsheetApp.getUi().alert(
+            'Set a valid inventory scraper search URL before filling descriptions.'
+        );
+        return;
+    }
+    beginInventoryScrape_(searchUrl, true);
+}
+
 function runScheduledInventoryScrape() {
     const properties = PropertiesService.getScriptProperties();
     const apiKey = PropertiesService.getUserProperties().getProperty(
@@ -163,7 +194,7 @@ function runScheduledInventoryScrape() {
     beginInventoryScrape_(searchUrl);
 }
 
-function beginInventoryScrape_(searchUrl) {
+function beginInventoryScrape_(searchUrl, descriptionOnly = false) {
     const properties = PropertiesService.getScriptProperties();
     if (properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty)) {
         SpreadsheetApp.getActiveSpreadsheet().toast(
@@ -187,12 +218,36 @@ function beginInventoryScrape_(searchUrl) {
         return;
     }
 
+    let listingIds = candidates.map(vehicle => vehicle.listingId);
+    if (descriptionOnly) {
+        const existingListings = getExistingListingRecords_(
+            trackerSheet,
+            sheetInfo.headerRow,
+            sheetInfo.listingIdColumn,
+            sheetInfo.urlColumn,
+            sheetInfo.stockColumn,
+            sheetInfo.statusColumn,
+            sheetInfo.descriptionColumn
+        );
+        listingIds = candidates
+            .filter(vehicle => {
+                const existing = existingListings.get(vehicle.listingId.toUpperCase());
+                return existing && !existing.description;
+            })
+            .map(vehicle => vehicle.listingId);
+        if (!listingIds.length) {
+            spreadsheet.toast('No listed vehicles with blank descriptions were found.');
+            return;
+        }
+    }
+
     const state = {
         spreadsheetId: spreadsheet.getId(),
         sheetId: trackerSheet.getSheetId(),
         headerRow: sheetInfo.headerRow,
         searchUrl,
-        listingIds: candidates.map(vehicle => vehicle.listingId),
+        listingIds,
+        descriptionOnly,
         nextIndex: 0,
         addedCount: 0,
         updatedCount: 0,
@@ -245,11 +300,14 @@ function processInventoryScrape_() {
             sheetInfo.listingIdColumn,
             sheetInfo.urlColumn,
             sheetInfo.stockColumn,
-            sheetInfo.statusColumn
+            sheetInfo.statusColumn,
+            sheetInfo.descriptionColumn
         );
         const rowsToAppend = [];
         const stockUpdates = new Map();
         const statusUpdates = new Map();
+        const descriptionUpdates = new Map();
+        const bodyStyleUpdates = new Map();
         let geminiRequestCount = 0;
         showInventoryScrapeProgress_(spreadsheet, state);
 
@@ -270,16 +328,51 @@ function processInventoryScrape_() {
             if (existing) {
                 const currentVehicle = candidatesById.get(listingId);
                 const currentStock = String(currentVehicle?.stock || '').trim();
+                let rowUpdated = false;
                 if (!existing.stock && currentStock) {
                     stockUpdates.set(existing.rowNumber, currentStock);
+                    existing.stock = currentStock;
+                    existing.status = markInventoryFreshlyScrapedStatus_(existing.status);
                     statusUpdates.set(
                         existing.rowNumber,
-                        markInventoryFreshlyScrapedStatus_(existing.status)
+                        existing.status
                     );
-                    state.updatedCount++;
-                } else {
-                    state.skippedCount++;
+                    rowUpdated = true;
                 }
+
+                if (currentVehicle && !existing.description) {
+                    try {
+                        Object.assign(
+                            currentVehicle,
+                            fetchInventoryVehicleDetails_(currentVehicle.url)
+                        );
+                    } catch (error) {
+                        state.errorCount++;
+                        Logger.log(`Detail lookup failed for existing listing ${listingId}: ${error.message}`);
+                    }
+
+                    try {
+                        if (geminiRequestCount > 0) {
+                            Utilities.sleep(INVENTORY_SCRAPER_CONFIG.geminiRequestDelayMillis);
+                        }
+                        geminiRequestCount++;
+                        const generated = generateInventoryCopy_(currentVehicle);
+                        descriptionUpdates.set(existing.rowNumber, generated.description);
+                        bodyStyleUpdates.set(existing.rowNumber, generated.bodyStyle);
+                        existing.description = generated.description;
+                        rowUpdated = true;
+                    } catch (error) {
+                        state.errorCount++;
+                        Logger.log(`Description generation failed for existing listing ${listingId}: ${error.message}`);
+                    }
+                }
+                if (rowUpdated) state.updatedCount++;
+                else state.skippedCount++;
+                continue;
+            }
+
+            if (state.descriptionOnly) {
+                state.skippedCount++;
                 continue;
             }
 
@@ -317,6 +410,8 @@ function processInventoryScrape_() {
 
         writeColumnUpdates_(trackerSheet, sheetInfo.stockColumn, stockUpdates);
         writeColumnUpdates_(trackerSheet, sheetInfo.statusColumn, statusUpdates);
+        writeColumnUpdates_(trackerSheet, sheetInfo.descriptionColumn, descriptionUpdates);
+        writeColumnUpdates_(trackerSheet, sheetInfo.bodyStyleColumn, bodyStyleUpdates);
         if (rowsToAppend.length) {
             const firstRow = trackerSheet.getLastRow() + 1;
             trackerSheet.getRange(
@@ -393,7 +488,9 @@ function getInventoryScraperSheetInfo_(sheet) {
         listingIdColumn: headerIndexes.get('listingid') + 1,
         urlColumn: headerIndexes.get('url') + 1,
         stockColumn: headerIndexes.get('stock') + 1,
-        statusColumn: headerIndexes.get('status') + 1
+        statusColumn: headerIndexes.get('status') + 1,
+        descriptionColumn: headerIndexes.get('description') + 1,
+        bodyStyleColumn: headerIndexes.get('bodystyle') + 1
     };
 }
 
@@ -403,7 +500,8 @@ function getExistingListingRecords_(
     listingIdColumn,
     urlColumn,
     stockColumn,
-    statusColumn
+    statusColumn,
+    descriptionColumn
 ) {
     const lastRow = sheet.getLastRow();
     if (lastRow <= headerRow) return new Map();
@@ -419,7 +517,8 @@ function getExistingListingRecords_(
         records.set(listingId, {
             rowNumber: headerRow + index + 1,
             stock: String(row[stockColumn - 1] || '').trim(),
-            status: String(row[statusColumn - 1] || '').trim()
+            status: String(row[statusColumn - 1] || '').trim(),
+            description: String(row[descriptionColumn - 1] || '').trim()
         });
     });
     return records;
@@ -764,6 +863,11 @@ function generateInventoryCopy_(vehicle) {
     const apiKey = PropertiesService.getUserProperties().getProperty(
         INVENTORY_SCRAPER_CONFIG.apiKeyProperty
     );
+    if (!apiKey) {
+        const error = new Error('The inventory scraper Gemini API key is missing.');
+        error.retryable = false;
+        throw error;
+    }
     const bodyStyles = [
         'Coupe', 'Truck', 'Commercial Van', 'Sedan', 'Hatchback', 'SUV',
         'Convertible', 'Wagon', 'Minivan', 'Small Car', 'Other'
@@ -792,35 +896,58 @@ function generateInventoryCopy_(vehicle) {
         '',
         details
     ].join('\n');
-    const response = UrlFetchApp.fetch(INVENTORY_SCRAPER_CONFIG.geminiEndpoint, {
-        method: 'post',
-        contentType: 'application/json',
-        headers: { 'x-goog-api-key': apiKey },
-        payload: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: { responseMimeType: 'application/json' }
-        }),
-        muteHttpExceptions: true
-    });
-    const responseCode = response.getResponseCode();
-    const result = JSON.parse(response.getContentText() || '{}');
-    if (responseCode < 200 || responseCode >= 300) {
-        throw new Error(result.error?.message || `Gemini returned HTTP ${responseCode}.`);
-    }
-    const responseText = result.candidates?.[0]?.content?.parts
-        ?.map(part => part.text || '')
-        .join('')
-        .trim();
-    if (!responseText) throw new Error('Gemini returned an empty description.');
+    let lastError;
+    for (let attempt = 1; attempt <= INVENTORY_SCRAPER_CONFIG.geminiMaxAttempts; attempt++) {
+        try {
+            const response = UrlFetchApp.fetch(INVENTORY_SCRAPER_CONFIG.geminiEndpoint, {
+                method: 'post',
+                contentType: 'application/json',
+                headers: { 'x-goog-api-key': apiKey },
+                payload: JSON.stringify({
+                    contents: [{ parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: 'application/json' }
+                }),
+                muteHttpExceptions: true
+            });
+            const responseCode = response.getResponseCode();
+            if (responseCode < 200 || responseCode >= 300) {
+                let result = {};
+                try {
+                    result = JSON.parse(response.getContentText() || '{}');
+                } catch (error) {
+                    Logger.log(`Could not parse Gemini error response: ${error.message}`);
+                }
+                const error = new Error(
+                    result.error?.message || `Gemini returned HTTP ${responseCode}.`
+                );
+                error.retryable = responseCode === 429 || responseCode >= 500;
+                throw error;
+            }
 
-    const generated = JSON.parse(responseText);
-    if (typeof generated.description !== 'string' || !generated.description.trim()) {
-        throw new Error('Gemini returned an invalid description.');
+            const result = JSON.parse(response.getContentText() || '{}');
+            const responseText = result.candidates?.[0]?.content?.parts
+                ?.map(part => part.text || '')
+                .join('')
+                .trim();
+            if (!responseText) throw new Error('Gemini returned an empty description.');
+
+            const generated = JSON.parse(responseText);
+            if (typeof generated.description !== 'string' || !generated.description.trim()) {
+                throw new Error('Gemini returned an invalid description.');
+            }
+            return {
+                bodyStyle: normalizeInventoryBodyStyle_(generated.bodyStyle) || vehicle.bodyStyle || 'Other',
+                description: formatInventoryDescription_(vehicle, generated.description)
+            };
+        } catch (error) {
+            lastError = error;
+            if (error.retryable === false || attempt === INVENTORY_SCRAPER_CONFIG.geminiMaxAttempts) {
+                throw error;
+            }
+            Utilities.sleep(INVENTORY_SCRAPER_CONFIG.geminiRetryDelayMillis * attempt);
+        }
     }
-    return {
-        bodyStyle: normalizeInventoryBodyStyle_(generated.bodyStyle) || vehicle.bodyStyle || 'Other',
-        description: formatInventoryDescription_(vehicle, generated.description)
-    };
+    throw lastError;
 }
 
 function formatInventoryDescription_(vehicle, description) {
@@ -848,7 +975,7 @@ function formatInventoryDescription_(vehicle, description) {
         'Call or text: (613) 683-9758',
         'ottawachryslerjeepdodge.com',
         '.',
-        'Ask for Max'
+        'Ask for Max 😉'
     ].join('\n');
 }
 

@@ -53,7 +53,10 @@ and appends price changes to a `Price History` tab.
    Listing ID; existing IDs are skipped unless their Stock cell is blank and a
    stock number has since appeared on the site, in which case that row is
    updated and its status refreshed. Progress appears in the spreadsheet toast,
-   and longer scrapes resume automatically. The script processes the
+   and longer scrapes resume automatically. Gemini retries transient description
+   failures up to three times. Use **Fill blank inventory descriptions** to
+   retry missing descriptions for existing listings returned by the saved URL;
+   this does not append new vehicles. The script processes the
    listings returned by that URL and follows every **Next page** link through
    the last page. Use separate search URLs for different inventory categories
    or filters.
