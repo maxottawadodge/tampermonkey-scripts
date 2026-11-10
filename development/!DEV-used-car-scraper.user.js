@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.51
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.51
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.51
+// @version         1.52
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.52
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.52
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -585,38 +585,51 @@
     function createPanel() {
         if (document.getElementById('dev-used-car-scraper')) return;
 
+        const initiallyCollapsed = Boolean(
+            GM_getValue('usedCarScraperCollapsed', true)
+        );
+        const panelWidth = initiallyCollapsed
+            ? 'fit-content'
+            : 'min(360px, calc(100vw - 24px))';
         const panel = document.createElement('section');
         panel.id = 'dev-used-car-scraper';
         panel.style.cssText =
             'position:fixed;right:16px;bottom:16px;z-index:999999;' +
             'display:flex;flex-direction:column;align-items:flex-end;gap:6px;padding:6px;' +
-            'box-sizing:border-box;width:fit-content;' +
+            `box-sizing:border-box;width:${panelWidth};` +
             'max-height:calc(100vh - 32px);' +
             'background:#fff;border:1px solid #bbb;border-radius:6px;' +
             'box-shadow:0 2px 10px rgba(0,0,0,.2);font:13px Arial,sans-serif;';
 
         const header = document.createElement('div');
         header.style.cssText =
-            'display:flex;align-items:center;justify-content:flex-end;gap:6px;width:auto;';
+            'display:flex;align-items:center;justify-content:flex-end;gap:6px;' +
+            `width:${initiallyCollapsed ? 'auto' : '100%'};`;
         const toggleButton = document.createElement('button');
         toggleButton.type = 'button';
-        toggleButton.textContent = 'Scraper ▸';
-        toggleButton.setAttribute('aria-expanded', 'false');
-        toggleButton.setAttribute('aria-label', 'Expand used car scraper');
+        toggleButton.textContent = initiallyCollapsed
+            ? 'Scraper ▸'
+            : 'Used car scraper ▾';
+        toggleButton.setAttribute('aria-expanded', String(!initiallyCollapsed));
+        toggleButton.setAttribute(
+            'aria-label',
+            `${initiallyCollapsed ? 'Expand' : 'Collapse'} used car scraper`
+        );
         toggleButton.style.cssText =
             'padding:6px 9px;border:0;border-radius:4px;' +
             'background:#2d6cdf;color:#fff;font-weight:600;cursor:pointer;';
         const versionLabel = document.createElement('span');
-        versionLabel.textContent = 'v1.51';
+        versionLabel.textContent = 'v1.52';
         versionLabel.style.cssText = 'color:#ddd;font-size:10px;';
-        versionLabel.hidden = true;
+        versionLabel.hidden = initiallyCollapsed;
         header.append(toggleButton, versionLabel);
 
         const controls = document.createElement('div');
         controls.id = 'dev-used-car-scraper-controls';
-        controls.hidden = true;
+        controls.hidden = initiallyCollapsed;
         controls.style.cssText =
-            'display:none;flex-direction:column;align-items:flex-end;gap:6px;' +
+            `display:${initiallyCollapsed ? 'none' : 'flex'};` +
+            'flex-direction:column;align-items:flex-end;gap:6px;' +
             'width:100%;max-width:100%;min-width:0;box-sizing:border-box;';
         toggleButton.setAttribute('aria-controls', controls.id);
 
@@ -1053,6 +1066,7 @@
         keyRow.appendChild(keyToggleButton);
         toggleButton.addEventListener('click', () => {
             const expanded = toggleButton.getAttribute('aria-expanded') !== 'true';
+            GM_setValue('usedCarScraperCollapsed', !expanded);
             toggleButton.setAttribute('aria-expanded', String(expanded));
             toggleButton.textContent = expanded ? 'Used car scraper ▾' : 'Scraper ▸';
             toggleButton.setAttribute(

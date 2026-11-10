@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.16
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.16
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.16
+// @version      5.17
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.17
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.17
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -150,14 +150,21 @@
 
         const container = document.createElement('div');
         container.id = 'ocdj-search-container';
+        const mobileCollapsed =
+            localStorage.getItem('ocdj-search-mobile-collapsed') === 'true';
+        if (mobileCollapsed) {
+            container.classList.add('mobile-collapsed');
+        }
 
         const mobileToggle = document.createElement('button');
         mobileToggle.id = 'ocdj-search-mobile-toggle';
         mobileToggle.type = 'button';
-        mobileToggle.textContent = '⌕';
-        mobileToggle.title = 'Collapse inventory search';
-        mobileToggle.setAttribute('aria-label', 'Collapse inventory search');
-        mobileToggle.setAttribute('aria-expanded', 'true');
+        mobileToggle.textContent = mobileCollapsed ? '⌕' : '×';
+        mobileToggle.title = mobileCollapsed
+            ? 'Expand inventory search'
+            : 'Collapse inventory search';
+        mobileToggle.setAttribute('aria-label', mobileToggle.title);
+        mobileToggle.setAttribute('aria-expanded', String(!mobileCollapsed));
 
         const searchRow = document.createElement('div');
         searchRow.id = 'ocdj-search-row';
@@ -263,6 +270,10 @@
 
         mobileToggle.addEventListener('click', () => {
             const collapsed = container.classList.toggle('mobile-collapsed');
+            localStorage.setItem(
+                'ocdj-search-mobile-collapsed',
+                String(collapsed)
+            );
             mobileToggle.textContent = collapsed ? '⌕' : '×';
             mobileToggle.title = collapsed
                 ? 'Expand inventory search'
