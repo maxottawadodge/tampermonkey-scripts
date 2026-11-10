@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV used car scraper
 // @namespace    http://tampermonkey.net/
-// @version         1.52
-// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.52
-// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.52
+// @version         1.53
+// @updateURL       https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.53
+// @downloadURL     https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js?v=1.53
 // @description  Export used vehicle listings to Google Sheets or CSV
 // @match        https://www.ottawachryslerjeepdodge.com/inventory.html*
 // @match        https://www.ottawachryslerjeepdodge.com/new/inventory/search.html*
@@ -40,7 +40,8 @@
         ['Description', vehicle => vehicle.description],
         ['VIN', vehicle => vehicle.vin],
         ['Condition', vehicle => vehicle.condition],
-        ['Scraped On', vehicle => vehicle.scrapedOn]
+        ['Scraped On', vehicle => vehicle.scrapedOn],
+        ['Listing ID', vehicle => vehicle.listingId]
     ];
 
     const colorOptions = [
@@ -180,6 +181,11 @@
             const key = listingLink.href;
             if (!name || vehicles.has(key)) continue;
 
+            const listingId = listingLink.pathname.match(/id(\d+)\.html$/i)?.[1] || '';
+            const reportedStock = cleanText(input.dataset.stockNumber);
+            const stockMatchesListingId = Boolean(
+                listingId && reportedStock.toUpperCase() === listingId.toUpperCase()
+            );
             const vin = cleanText(input.dataset.vin).toUpperCase();
             vehicles.set(key, {
                 name,
@@ -191,8 +197,9 @@
                 mileage: cleanText(card.querySelector('.s-km')?.textContent)
                     .replace(/\D/g, ''),
                 url: key,
-                stock: cleanText(input.dataset.stockNumber),
-                status: 'Freshly Scraped',
+                stock: stockMatchesListingId ? '' : reportedStock,
+                status: stockMatchesListingId ? 'In Transit' : 'Freshly Scraped',
+                listingId,
                 vehicleType: 'Car/Truck',
                 vin,
                 windowStickerUrl: getWindowStickerUrl(vin),
@@ -619,7 +626,7 @@
             'padding:6px 9px;border:0;border-radius:4px;' +
             'background:#2d6cdf;color:#fff;font-weight:600;cursor:pointer;';
         const versionLabel = document.createElement('span');
-        versionLabel.textContent = 'v1.52';
+        versionLabel.textContent = 'v1.53';
         versionLabel.style.cssText = 'color:#ddd;font-size:10px;';
         versionLabel.hidden = initiallyCollapsed;
         header.append(toggleButton, versionLabel);

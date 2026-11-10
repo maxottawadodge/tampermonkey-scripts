@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.16
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.16
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.16
+// @version      1.17
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.17
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.17
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -36,8 +36,10 @@
         'Description',
         'VIN',
         'Condition',
-        'Scraped On'
+        'Scraped On',
+        'Listing ID'
     ];
+    const supportedColumnCounts = [scraperHeaders.length - 1, scraperHeaders.length];
     const fuelTypes = [
         'Diesel',
         'Electric',
@@ -142,7 +144,7 @@
                 ];
             }
 
-            const dataRow = tableRows.find(row => row.length === scraperHeaders.length);
+            const dataRow = tableRows.find(row => supportedColumnCounts.includes(row.length));
             if (dataRow) {
                 return [dataRow.map((cell, index) => {
                     const link = cell.querySelector('a[href]');
@@ -208,10 +210,10 @@
             }
             const dataRow = trimTrailingEmptyCells(rows[1]);
             if (
-                headerRow.length !== scraperHeaders.length ||
-                dataRow.length !== scraperHeaders.length
+                !supportedColumnCounts.includes(headerRow.length) ||
+                dataRow.length > headerRow.length
             ) {
-                throw new Error('Copy exactly one 23-column scraper row, with its header row.');
+                throw new Error('Copy exactly one 23- or 24-column scraper row, with its header row.');
             }
             const headerIndexes = new Map(
                 headerRow.map((header, index) => [normalize(header), index])
@@ -229,9 +231,9 @@
             const dataRow = trimTrailingEmptyCells(rows[0]);
             if (
                 rows.length !== 1 ||
-                dataRow.length !== scraperHeaders.length
+                !supportedColumnCounts.includes(dataRow.length)
             ) {
-                throw new Error('Copy exactly one 23-column scraper row without the header.');
+                throw new Error('Copy exactly one 23- or 24-column scraper row without the header.');
             }
             values = Object.fromEntries(
                 scraperHeaders.map((header, index) => [header, dataRow[index] || ''])
