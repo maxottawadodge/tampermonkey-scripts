@@ -1,8 +1,9 @@
-// Version: 1.1.3
+// Version: 1.1.5
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
     spreadsheetIdProperty: 'PRICE_TRACKER_SPREADSHEET_ID',
+    scheduleEnabledProperty: 'PRICE_TRACKER_SCHEDULE_ENABLED',
     progressProperty: 'PRICE_TRACKER_SCAN_PROGRESS',
     dailyHandler: 'runPriceCheck',
     continuationHandler: 'continuePriceCheck',
@@ -22,18 +23,69 @@ const PRICE_TRACKER_CONFIG = Object.freeze({
 });
 
 function onOpen() {
+    const scriptProperties = PropertiesService.getScriptProperties();
+    const userProperties = PropertiesService.getUserProperties();
+    const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    const activeSheet = spreadsheet.getActiveSheet();
+    const trackerTabIsSet =
+        scriptProperties.getProperty(PRICE_TRACKER_CONFIG.spreadsheetIdProperty) === spreadsheet.getId() &&
+        scriptProperties.getProperty(PRICE_TRACKER_CONFIG.trackerSheetIdProperty) === String(activeSheet.getSheetId());
+    let priceScansAreEnabled = scriptProperties.getProperty(
+        PRICE_TRACKER_CONFIG.scheduleEnabledProperty
+    ) === 'true';
+    let inventoryScansAreEnabled = scriptProperties.getProperty(
+        INVENTORY_SCRAPER_CONFIG.scheduleEnabledProperty
+    ) === 'true';
+    try {
+        const triggers = ScriptApp.getProjectTriggers();
+        priceScansAreEnabled = triggers.filter(trigger =>
+            trigger.getHandlerFunction() === PRICE_TRACKER_CONFIG.dailyHandler
+        ).length >= PRICE_TRACKER_CONFIG.scanHours.length;
+        inventoryScansAreEnabled = triggers.some(trigger =>
+            trigger.getHandlerFunction() === INVENTORY_SCRAPER_CONFIG.dailyHandler
+        );
+    } catch (error) {
+        Logger.log(`Could not inspect installed scan triggers: ${error.message}`);
+    }
+    const inventoryApiKeyIsSet = Boolean(
+        userProperties.getProperty(
+            INVENTORY_SCRAPER_CONFIG.apiKeyProperty
+        )
+    );
+    const inventorySearchUrl = scriptProperties.getProperty(
+        INVENTORY_SCRAPER_CONFIG.searchUrlProperty
+    );
+    const inventorySearchUrlIsSet = Boolean(
+        inventorySearchUrl && isInventorySearchUrl_(inventorySearchUrl)
+    );
+
     SpreadsheetApp.getUi()
         .createMenu('Price Tracker')
-        .addItem('Set active tab as tracker', 'setPriceTrackerSheet')
-        .addItem('Install scans (8 AM-8 PM, every 2 hours)', 'installDailyPriceCheck')
+        .addItem(
+            `${trackerTabIsSet ? '✅ ' : ''}Set active tab as tracker`,
+            'setPriceTrackerSheet'
+        )
+        .addItem(
+            `${priceScansAreEnabled ? '✅ ' : ''}Install scans (8 AM-8 PM, every 2 hours)`,
+            'installDailyPriceCheck'
+        )
         .addSeparator()
         .addItem('Run price scan now', 'runPriceCheck')
         .addItem('Fill blank Listing IDs', 'fillBlankListingIds')
         .addSeparator()
-        .addItem('Set inventory scraper Gemini key', 'setInventoryScraperGeminiKey')
-        .addItem('Set inventory scraper search URL', 'setInventoryScraperSearchUrl')
+        .addItem(
+            `${inventoryApiKeyIsSet ? '✅ ' : ''}Set inventory scraper Gemini key`,
+            'setInventoryScraperGeminiKey'
+        )
+        .addItem(
+            `${inventorySearchUrlIsSet ? '✅ ' : ''}Set inventory scraper search URL`,
+            'setInventoryScraperSearchUrl'
+        )
         .addItem('Scrape new inventory', 'startInventoryScrape')
-        .addItem('Install daily inventory scrape (8 AM)', 'installDailyInventoryScrape')
+        .addItem(
+            `${inventoryScansAreEnabled ? '✅ ' : ''}Install daily inventory scrape (8 AM)`,
+            'installDailyInventoryScrape'
+        )
         .addItem('Continue inventory scrape now', 'continueInventoryScrape')
         .addToUi();
 }
@@ -52,6 +104,7 @@ function setPriceTrackerSheet() {
         spreadsheet.getId()
     );
     spreadsheet.toast(`Using "${sheet.getName()}" as the price tracker.`);
+    onOpen();
 }
 
 function installDailyPriceCheck() {
@@ -59,6 +112,8 @@ function installDailyPriceCheck() {
     const trackerSheet = getTrackerSheet_(spreadsheet);
     getTrackerColumns_(trackerSheet);
 
+    const properties = PropertiesService.getScriptProperties();
+    properties.deleteProperty(PRICE_TRACKER_CONFIG.scheduleEnabledProperty);
     ScriptApp.getProjectTriggers()
         .filter(trigger =>
             trigger.getHandlerFunction() === PRICE_TRACKER_CONFIG.dailyHandler
@@ -73,10 +128,12 @@ function installDailyPriceCheck() {
             .inTimezone(Session.getScriptTimeZone())
             .create();
     });
+    properties.setProperty(PRICE_TRACKER_CONFIG.scheduleEnabledProperty, 'true');
 
     spreadsheet.toast(
         `Price scans installed for "${trackerSheet.getName()}" every 2 hours from about 8 AM through 8 PM.`
     );
+    onOpen();
 }
 
 function fillBlankListingIds() {

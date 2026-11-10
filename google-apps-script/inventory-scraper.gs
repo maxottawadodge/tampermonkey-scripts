@@ -1,11 +1,13 @@
-// Version: 1.0.1
+// Version: 1.0.3
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
     apiKeyProperty: 'INVENTORY_SCRAPER_GEMINI_API_KEY',
+    scheduleEnabledProperty: 'INVENTORY_SCRAPE_SCHEDULE_ENABLED',
     dailyHandler: 'runScheduledInventoryScrape',
     continuationHandler: 'continueInventoryScrape',
     dailyHour: 8,
+    maxPagesPerSearch: 100,
     maxRunMillis: 4 * 60 * 1000,
     continuationDelayMillis: 60 * 1000,
     progressUpdateInterval: 5,
@@ -40,6 +42,7 @@ function setInventoryScraperGeminiKey() {
         apiKey
     );
     SpreadsheetApp.getActiveSpreadsheet().toast('Gemini API key saved for inventory scraping.');
+    onOpen();
 }
 
 function setInventoryScraperSearchUrl() {
@@ -61,6 +64,7 @@ function setInventoryScraperSearchUrl() {
         searchUrl
     );
     SpreadsheetApp.getActiveSpreadsheet().toast('Daily inventory search URL saved.');
+    onOpen();
 }
 
 function installDailyInventoryScrape() {
@@ -82,6 +86,7 @@ function installDailyInventoryScrape() {
         return;
     }
 
+    properties.deleteProperty(INVENTORY_SCRAPER_CONFIG.scheduleEnabledProperty);
     ScriptApp.getProjectTriggers()
         .filter(trigger =>
             trigger.getHandlerFunction() === INVENTORY_SCRAPER_CONFIG.dailyHandler
@@ -94,12 +99,14 @@ function installDailyInventoryScrape() {
         .atHour(INVENTORY_SCRAPER_CONFIG.dailyHour)
         .inTimezone(Session.getScriptTimeZone())
         .create();
+    properties.setProperty(INVENTORY_SCRAPER_CONFIG.scheduleEnabledProperty, 'true');
 
     spreadsheet.toast(
         `Daily inventory scrapes installed for about 8 AM using the saved search URL.`,
         'Inventory Scraper',
         10
     );
+    onOpen();
 }
 
 function startInventoryScrape() {
@@ -124,7 +131,7 @@ function startInventoryScrape() {
     const ui = SpreadsheetApp.getUi();
     const response = ui.prompt(
         'Scrape inventory results',
-        'Paste a dealership inventory search URL. This scans the results currently returned by that URL.',
+        'Paste a dealership inventory search URL. All result pages will be scanned.',
         ui.ButtonSet.OK_CANCEL
     );
     if (response.getSelectedButton() !== ui.Button.OK) return;
@@ -186,7 +193,7 @@ function beginInventoryScrape_(searchUrl) {
         return;
     }
     if (!candidates.length) {
-        spreadsheet.toast('No vehicle listings were found on that results page.', 'Inventory Scraper', 10);
+        spreadsheet.toast('No vehicle listings were found on those result pages.', 'Inventory Scraper', 10);
         return;
     }
 
@@ -433,24 +440,66 @@ function isInventorySearchUrl_(url) {
 }
 
 function fetchInventoryCandidates_(searchUrl) {
-    const response = UrlFetchApp.fetch(searchUrl, {
-        followRedirects: true,
-        muteHttpExceptions: true,
-        headers: { Accept: 'text/html' }
-    });
-    const responseCode = response.getResponseCode();
-    if (responseCode < 200 || responseCode >= 300) {
-        throw new Error(`Inventory search returned HTTP ${responseCode}.`);
-    }
+    const vehicles = new Map();
+    const visitedPageUrls = new Set();
+    let pageUrl = searchUrl;
+    while (pageUrl) {
+        if (visitedPageUrls.has(pageUrl)) break;
+        if (visitedPageUrls.size >= INVENTORY_SCRAPER_CONFIG.maxPagesPerSearch) {
+            throw new Error('Inventory pagination exceeded the 100-page safety limit.');
+        }
+        visitedPageUrls.add(pageUrl);
 
-    const html = response.getContentText();
+        const response = UrlFetchApp.fetch(pageUrl, {
+            followRedirects: true,
+            muteHttpExceptions: true,
+            headers: { Accept: 'text/html' }
+        });
+        const responseCode = response.getResponseCode();
+        if (responseCode < 200 || responseCode >= 300) {
+            throw new Error(`Inventory search returned HTTP ${responseCode} for page ${visitedPageUrls.size}.`);
+        }
+
+        const html = response.getContentText();
+        addInventoryCandidatesFromHtml_(html, vehicles);
+        pageUrl = getNextInventoryPageUrl_(html);
+    }
+    return [...vehicles.values()];
+}
+
+function getNextInventoryPageUrl_(html) {
+    const links = html.match(/<a\b[^>]*>[\s\S]*?<\/a>/gi) || [];
+    for (const link of links) {
+        const linkText = cleanInventoryHtmlText_(link);
+        const relValues = readInventoryAttribute_(link, 'rel')
+            .toLowerCase()
+            .split(/\s+/);
+        const accessibleName = [
+            readInventoryAttribute_(link, 'aria-label'),
+            readInventoryAttribute_(link, 'title')
+        ].join(' ');
+        if (
+            !relValues.includes('next') &&
+            !/\bnext(?:\s+page)?\b/i.test(`${linkText} ${accessibleName}`)
+        ) continue;
+
+        const href = readInventoryAttribute_(link, 'href');
+        if (!href) continue;
+        const nextUrl = normalizeInventoryUrl_(href);
+        if (nextUrl.startsWith(`${INVENTORY_SCRAPER_CONFIG.dealershipOrigin}/inventory/`)) {
+            return nextUrl;
+        }
+    }
+    return '';
+}
+
+function addInventoryCandidatesFromHtml_(html, vehicles) {
     const cardStarts = [...html.matchAll(
         /<div\b[^>]*\bclass=["'][^"']*\bcarBoxOuter\b[^"']*["'][^>]*>/gi
     )].map(match => match.index);
     const inputMatches = [...html.matchAll(
         /<input\b(?=[^>]*\bname=["']vehicledata["'])[^>]*>/gi
     )];
-    const vehicles = new Map();
     let cardIndex = 0;
 
     inputMatches.forEach(inputMatch => {
@@ -515,7 +564,6 @@ function fetchInventoryCandidates_(searchUrl) {
             descriptionBody: ''
         });
     });
-    return [...vehicles.values()];
 }
 
 function parseInventoryAttributes_(tag) {

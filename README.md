@@ -50,8 +50,9 @@ and appends price changes to a `Price History` tab.
    inventory scrape (8 AM)** to schedule it. New vehicles are appended by
    Listing ID; existing IDs are skipped. Progress appears in the spreadsheet
    toast, and longer scrapes resume automatically. The script processes the
-   listings returned by that URL; use separate search URLs for different
-   inventory categories or filters.
+   listings returned by that URL and follows every **Next page** link through
+   the last page. Use separate search URLs for different inventory categories
+   or filters.
 
 The tracker tab must have a header row containing `Stock`, `URL`, and `Price`.
 Add a `Listing ID` header to use **Fill blank Listing IDs**.
