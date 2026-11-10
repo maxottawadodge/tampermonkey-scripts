@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.17
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.17
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.17
+// @version      5.18
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.18
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.18
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -268,8 +268,8 @@
             }
         });
 
-        mobileToggle.addEventListener('click', () => {
-            const collapsed = container.classList.toggle('mobile-collapsed');
+        function setMobileCollapsed(collapsed) {
+            container.classList.toggle('mobile-collapsed', collapsed);
             localStorage.setItem(
                 'ocdj-search-mobile-collapsed',
                 String(collapsed)
@@ -280,6 +280,10 @@
                 : 'Collapse inventory search';
             mobileToggle.setAttribute('aria-label', mobileToggle.title);
             mobileToggle.setAttribute('aria-expanded', String(!collapsed));
+        }
+
+        mobileToggle.addEventListener('click', () => {
+            setMobileCollapsed(!container.classList.contains('mobile-collapsed'));
         });
 
         searchRow.append(input, button, filters);
@@ -304,7 +308,11 @@
         filterObserver.observe(document.body, { childList: true, subtree: true });
         window.addEventListener('popstate', syncFiltersFromUrl);
         window.setTimeout(() => {
-            if (window.innerWidth > 600) input.focus();
+            if (window.innerWidth <= 600 &&
+                container.classList.contains('mobile-collapsed')) {
+                setMobileCollapsed(false);
+            }
+            input.focus({ preventScroll: true });
         }, 250);
     }
 
