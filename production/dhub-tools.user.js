@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.9
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js?v=1.9
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js?v=1.9
-// @description  Add DealerSocket search and copy buttons beside phone numbers and make tel clickable
+// @version      1.10
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js?v=1.10
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js?v=1.10
+// @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
 // @match        https://app.demandhub.co/*
 // @grant        none
 // ==/UserScript==
@@ -16,6 +16,17 @@
         /(^|[^\d])(\+\d{1,3}[ .-]?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}|(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)/;
     const searchColor = '#287397';
     const copyColor = '#2f8f5b';
+    const nameSelectors = [
+        'span[name="editName"]',
+        '[data-testid*="contact-name"]',
+        '[data-testid*="lead-name"]',
+        '[data-testid*="customer-name"]',
+        '[class*="contact-name"]',
+        '[class*="lead-name"]',
+        '[class*="customer-name"]',
+        '[class*="full-name"]',
+        'input[autocomplete="name"]'
+    ].join(',');
 
     function createSearchLink(phone) {
         const link = document.createElement('a');
@@ -35,11 +46,11 @@
         return link;
     }
 
-    function createCopyButton(phone) {
+    function createCopyButton(value, label = 'phone number') {
         const button = document.createElement('button');
         button.type = 'button';
-        button.title = 'Copy phone number';
-        button.setAttribute('aria-label', `Copy phone number ${phone}`);
+        button.title = `Copy ${label}`;
+        button.setAttribute('aria-label', `Copy ${label}`);
         button.style.cssText =
             `margin-left:5px;padding:2px 4px;background:${copyColor};color:#fff;` +
             'border:0;border-radius:4px;font:inherit;font-size:0.85em;' +
@@ -48,18 +59,59 @@
 
         button.addEventListener('click', async () => {
             try {
-                await navigator.clipboard.writeText(phone);
+                await navigator.clipboard.writeText(button.dataset.copyValue);
                 button.textContent = 'Copied!';
                 window.setTimeout(() => {
                     button.textContent = 'Copy';
                 }, 1500);
             } catch (error) {
                 button.textContent = 'Copy failed';
-                console.error('Could not copy phone number to clipboard:', error);
+                console.error(`Could not copy ${label} to clipboard:`, error);
             }
         });
 
+        button.dataset.copyValue = value;
         return button;
+    }
+
+    function getNameValue(element) {
+        const value = element.matches('input, textarea')
+            ? element.value
+            : element.innerText || element.textContent;
+        return (value || '').replace(/\s+/g, ' ').trim();
+    }
+
+    function isLikelyContactName(value) {
+        if (!value || value.length > 80 || /[\d@]/.test(value)) return false;
+        const parts = value.split(/\s+/);
+        return parts.length >= 2 && parts.length <= 6 &&
+            parts.every(part => /^[\p{L}\p{M}][\p{L}\p{M}.'’,\-]*$/u.test(part));
+    }
+
+    function addNameCopyButtons(root) {
+        if (!root?.querySelectorAll) return;
+        const elements = [...root.querySelectorAll(nameSelectors)];
+        if (root.nodeType === Node.ELEMENT_NODE && root.matches(nameSelectors)) {
+            elements.unshift(root);
+        }
+
+        for (const element of elements) {
+            const name = getNameValue(element);
+            if (!isLikelyContactName(name) || !element.parentNode) continue;
+
+            let next = element.nextSibling;
+            while (next && next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()) {
+                next = next.nextSibling;
+            }
+            if (next?.dataset?.demandHubNameCopy === 'true') {
+                next.dataset.copyValue = name;
+                continue;
+            }
+
+            const button = createCopyButton(name, 'name');
+            button.dataset.demandHubNameCopy = 'true';
+            element.parentNode.insertBefore(button, element.nextSibling);
+        }
     }
 
     function linkPhoneText(textNode) {
@@ -93,13 +145,16 @@
 
     function processNode(node) {
         if (node.nodeType === Node.TEXT_NODE) {
+            const parent = node.parentElement;
             linkPhoneText(node);
+            addNameCopyButtons(parent);
             return;
         }
 
         if (node.nodeType !== Node.ELEMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_NODE) return;
 
+        addNameCopyButtons(node);
         const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
         const textNodes = [];
         let textNode;

@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      3.3
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js?v=3.3
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js?v=3.3
-// @description  Auto-populate DealerSocket searches and add click-to-call buttons
+// @version      3.4
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js?v=3.4
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js?v=3.4
+// @description  Auto-populate DealerSocket searches and add copy/contact tools
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*
 // @run-at       document-start
@@ -57,6 +57,7 @@
     const observedFrames = new WeakSet();
     const phonePattern =
         /(^|[^\d])(\+?(?:\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]?\d{3}[ .-]?\d{4}|\d{3}[.-]\d{4})(?!\d)/g;
+    const emailPattern = /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?)+/gi;
     const vinPattern = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
     const cdjrWmis = new Set([
         '1C3', '1C4', '1C6', '2C3', '2C4', '2C7', '3C3', '3C4', '3C6',
@@ -168,7 +169,10 @@
         if (!control) return;
 
         if (control.dataset.dealerSocketVinCopy === 'true' ||
-            control.dataset.dealerSocketPhoneCopy === 'true') {
+            control.dataset.dealerSocketPhoneCopy === 'true' ||
+            control.dataset.dealerSocketEmailCopy === 'true' ||
+            control.dataset.dealerSocketNameCopy === 'true' ||
+            control.dataset.dealerSocketAddressCopy === 'true') {
             event.preventDefault();
             event.stopImmediatePropagation();
             try {
@@ -196,7 +200,8 @@
 
         if (control.dataset.dealerSocketVinLink === 'true' ||
             control.dataset.dealerSocketVinSearch === 'true' ||
-            control.dataset.dealerSocketPhoneLink === 'true') {
+            control.dataset.dealerSocketPhoneLink === 'true' ||
+            control.dataset.dealerSocketMapsLink === 'true') {
             event.stopImmediatePropagation();
         }
     }
@@ -208,7 +213,11 @@
             'dealerSocketVinSearch',
             'dealerSocketVinCopy',
             'dealerSocketPhoneLink',
-            'dealerSocketPhoneCopy'
+            'dealerSocketPhoneCopy',
+            'dealerSocketEmailCopy',
+            'dealerSocketNameCopy',
+            'dealerSocketMapsLink',
+            'dealerSocketAddressCopy'
         ];
         let next = node.nextSibling;
         while (next) {
@@ -386,6 +395,232 @@
         }
     }
 
+    function addEmailCopyButtons(textNodes) {
+        if (!textNodes.length) return;
+        const positions = [];
+        let text = '';
+        for (const node of textNodes) {
+            const start = text.length;
+            text += node.nodeValue || '';
+            positions.push({ node, start, end: text.length });
+        }
+        if (!text.includes('@')) return;
+
+        emailPattern.lastIndex = 0;
+        let match;
+        const matches = [];
+        while ((match = emailPattern.exec(text)) !== null) {
+            matches.push({ email: match[0], end: match.index + match[0].length });
+        }
+
+        for (let index = matches.length - 1; index >= 0; index--) {
+            const { email, end } = matches[index];
+            const position = positions.find(item => end <= item.end && end > item.start);
+            if (!position) continue;
+
+            const existing = getFollowingControls(position.node).find(control =>
+                control.dataset.dealerSocketEmailCopy === 'true' &&
+                control.dataset.copyValue === email
+            );
+            if (existing) continue;
+
+            const range = position.node.ownerDocument.createRange();
+            range.setStart(position.node, end - position.start);
+            range.collapse(true);
+            range.insertNode(createCopyButton(
+                position.node.ownerDocument,
+                email,
+                'email address',
+                'dealerSocketEmailCopy'
+            ));
+        }
+    }
+
+    function addEmailCopyButtonsToLinks(root) {
+        if (!root?.querySelectorAll) return;
+        const links = [...root.querySelectorAll('a[href]')];
+        if (root.nodeType === Node.ELEMENT_NODE && root.matches('a[href]')) {
+            links.unshift(root);
+        }
+
+        for (const link of links) {
+            const href = link.getAttribute('href') || '';
+            const source = /^mailto:/i.test(href)
+                ? decodeURIComponent(href.slice(7).split('?')[0])
+                : link.textContent;
+            emailPattern.lastIndex = 0;
+            const email = source.match(emailPattern)?.[0];
+            if (!email) continue;
+
+            const existing = getFollowingControls(link).find(control =>
+                control.dataset.dealerSocketEmailCopy === 'true' &&
+                control.dataset.copyValue === email
+            );
+            if (existing) continue;
+
+            link.after(createCopyButton(
+                link.ownerDocument,
+                email,
+                'email address',
+                'dealerSocketEmailCopy'
+            ));
+        }
+    }
+
+    function getNameText(nameElement) {
+        const walker = nameElement.ownerDocument.createTreeWalker(
+            nameElement,
+            NodeFilter.SHOW_TEXT
+        );
+        const parts = [];
+        let textNode;
+        while ((textNode = walker.nextNode())) {
+            const part = textNode.nodeValue.trim();
+            if (part) parts.push(part);
+        }
+        return parts.join(' ');
+    }
+
+    function addNameCopyButton(nameElement) {
+        const name = getNameText(nameElement);
+        if (!name) return;
+
+        let next = nameElement.nextSibling;
+        while (next && (next.nodeType === Node.COMMENT_NODE ||
+            (next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()))) {
+            next = next.nextSibling;
+        }
+        if (next?.dataset?.dealerSocketNameCopy === 'true') {
+            next.dataset.copyValue = name;
+            return;
+        }
+
+        nameElement.parentNode.insertBefore(
+            createCopyButton(
+                nameElement.ownerDocument,
+                name,
+                'name',
+                'dealerSocketNameCopy'
+            ),
+            nameElement.nextSibling
+        );
+    }
+
+    function createMapsLink(doc, address) {
+        const link = doc.createElement('a');
+        link.href =
+            `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+        link.target = '_blank';
+        link.rel = 'noopener noreferrer';
+        link.title = `Search Google Maps for ${address}`;
+        link.setAttribute('aria-label', 'Open address in Google Maps');
+        link.dataset.dealerSocketMapsLink = 'true';
+        link.style.cssText =
+            'display:inline-flex;align-items:center;margin-left:3px;padding:1px 2px;' +
+            'color:#2d6cdf;vertical-align:middle;text-decoration:none;line-height:1;';
+
+        const icon = doc.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('width', '13');
+        icon.setAttribute('height', '13');
+        icon.setAttribute('fill', 'currentColor');
+        icon.setAttribute('aria-hidden', 'true');
+        const pin = doc.createElementNS('http://www.w3.org/2000/svg', 'path');
+        pin.setAttribute(
+            'd',
+            'M12 22s8-7.2 8-13a8 8 0 1 0-16 0c0 5.8 8 13 8 13zm0-10a3 3 0 1 1 0-6 3 3 0 0 1 0 6z'
+        );
+        icon.appendChild(pin);
+        link.appendChild(icon);
+        return link;
+    }
+
+    function getValidAddress(text) {
+        const address = text
+            .replace(/(?:<\s*)?-?\s*invalid\s+(?:address|city|zip|postal(?:\s+code)?)\s*-?(?:>)?/gi, ' ')
+            .replace(/[<>]+/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+        const streetAddress =
+            /^\d{1,6}(?:[-–]\d{1,6})?\s+(?:[\p{L}\d.'’-]+\s+){1,8}(?:street|st|avenue|ave|road|rd|drive|dr|boulevard|blvd|lane|ln|court|ct|crescent|cres|highway|hwy|terrace|ter|trail|trl|way)\b/iu;
+        const poBox = /^P\.?\s*O\.?\s+Box\s+\d+\b/i;
+        return streetAddress.test(address) || poBox.test(address) ? address : '';
+    }
+
+    function getValidPostalCode(text) {
+        const postalCode = text.replace(/\s+/g, '').toUpperCase();
+        return /^[ABCEGHJ-NPRSTVXY]\d[ABCEGHJ-NPRSTV-Z]\d[ABCEGHJ-NPRSTV-Z]\d$/.test(postalCode)
+            ? postalCode
+            : '';
+    }
+
+    function addAddressMapButton(textNode) {
+        const text = textNode.nodeValue || '';
+        const postalElement = textNode.parentElement?.closest(
+            '[ng-show="ctrl.contact.address.postal"]'
+        );
+        const address = postalElement
+            ? getValidPostalCode(text)
+            : getValidAddress(text);
+        const controls = getFollowingControls(textNode);
+        const existing = controls.find(control =>
+            control.dataset.dealerSocketMapsLink === 'true');
+        const existingCopy = controls.find(control =>
+            control.dataset.dealerSocketAddressCopy === 'true');
+        if (!address) {
+            existing?.remove();
+            existingCopy?.remove();
+            return;
+        }
+        if (existing) {
+            existing.href =
+                `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
+            existing.title = `Search Google Maps for ${address}`;
+        } else {
+            const range = textNode.ownerDocument.createRange();
+            range.setStart(textNode, textNode.length);
+            range.collapse(true);
+            range.insertNode(createMapsLink(textNode.ownerDocument, address));
+        }
+
+        if (existingCopy) {
+            existingCopy.dataset.copyValue = address;
+            return;
+        }
+
+        const copyButton = createCopyButton(
+            textNode.ownerDocument,
+            address,
+            'address',
+            'dealerSocketAddressCopy'
+        );
+        const mapsLink = getFollowingControls(textNode).find(control =>
+            control.dataset.dealerSocketMapsLink === 'true');
+        if (mapsLink) {
+            mapsLink.after(copyButton);
+        } else {
+            const range = textNode.ownerDocument.createRange();
+            range.setStart(textNode, textNode.length);
+            range.collapse(true);
+            range.insertNode(copyButton);
+        }
+    }
+
+    function processNameCopyNode(node) {
+        const selector = 'span[name="editName"]';
+        const candidates = new Set();
+        if (node.nodeType === Node.TEXT_NODE) {
+            const nameElement = node.parentElement?.closest(selector);
+            if (nameElement) candidates.add(nameElement);
+        } else if (node.nodeType === Node.ELEMENT_NODE) {
+            if (node.matches(selector)) candidates.add(node);
+            node.querySelectorAll(selector).forEach(element => candidates.add(element));
+        } else if (node.querySelectorAll) {
+            node.querySelectorAll(selector).forEach(element => candidates.add(element));
+        }
+        candidates.forEach(addNameCopyButton);
+    }
+
     function getBlockTextNodes(block) {
         const walker = block.ownerDocument.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
             acceptNode(textNode) {
@@ -407,10 +642,12 @@
             node.nodeType !== Node.ELEMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
+        processNameCopyNode(node);
         if (node.nodeType === Node.ELEMENT_NODE &&
             node.closest(ignoredPhoneElements)) return;
 
         const doc = node.nodeType === Node.DOCUMENT_NODE ? node : node.ownerDocument;
+        addEmailCopyButtonsToLinks(node);
         const blocks = new Set();
         if (node.nodeType === Node.TEXT_NODE) {
             if (node.parentElement && !node.parentElement.closest(ignoredPhoneElements)) {
@@ -433,14 +670,19 @@
 
         for (const block of blocks) {
             const textNodes = getBlockTextNodes(block);
+            textNodes.forEach(addAddressMapButton);
             addPhoneLinks(textNodes);
-            addVinLinks(getBlockTextNodes(block));
+            const currentTextNodes = getBlockTextNodes(block);
+            addVinLinks(currentTextNodes);
+            addEmailCopyButtons(getBlockTextNodes(block));
         }
     }
 
     function observePhoneDocument(doc) {
         if (observedDocuments.has(doc) || !doc.body) return;
         observedDocuments.add(doc);
+        doc.querySelectorAll('button[data-dealer-socket-name-copy="true"]')
+            .forEach(button => button.remove());
         doc.addEventListener('click', event => {
             handleInjectedControlClick(event, doc);
         }, true);

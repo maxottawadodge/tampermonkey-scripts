@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.2
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js?v=5.2
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js?v=5.2
+// @version      5.3
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js?v=5.3
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js?v=5.3
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -13,48 +13,216 @@
 
     'use strict';
 
+    function getInventoryFilterState(search = window.location.search) {
+        const filterId = new URLSearchParams(search).get('filterid');
+        const match = filterId?.match(/^a9b([123]+)q0-10(s47Ex0|x0)-0-0(?:\s|$)/);
+        return { filterId, match };
+    }
+
     function createSearchBar() {
         if (document.getElementById('ocdj-search')) return;
 
+        const filterState = getInventoryFilterState(window.location.search);
+        const filterMatch = filterState.match;
+        const urlCategoryIds = filterMatch ? new Set(filterMatch[1]) : null;
+
+        const style = document.createElement('style');
+        style.textContent = `
+            #ocdj-search-container {
+                position: fixed;
+                top: 10px;
+                right: 10px;
+                z-index: 999999;
+                box-sizing: border-box;
+                max-width: calc(100vw - 20px);
+                padding: 6px;
+                border: 1px solid #ccc;
+                border-radius: 8px;
+                background: #fff;
+                box-shadow: 0 2px 10px rgba(0,0,0,.2);
+                font: 13px Arial, sans-serif;
+            }
+            #ocdj-search-row {
+                display: flex;
+                align-items: center;
+                gap: 6px;
+            }
+            #ocdj-search-mobile-toggle {
+                display: none;
+            }
+            #ocdj-search {
+                box-sizing: border-box;
+                width: clamp(120px, 18vw, 200px);
+                min-width: 0;
+                padding: 5px 6px;
+                font: inherit;
+            }
+            #ocdj-search-button,
+            #ocdj-search-filters summary {
+                padding: 5px 8px;
+                cursor: pointer;
+                white-space: nowrap;
+            }
+            #ocdj-search-filters {
+                position: relative;
+            }
+            #ocdj-search-filter-options {
+                position: absolute;
+                top: calc(100% + 8px);
+                right: 0;
+                display: none;
+                gap: 10px;
+                padding: 8px;
+                border: 1px solid #ccc;
+                border-radius: 6px;
+                background: #fff;
+                box-shadow: 0 2px 8px rgba(0,0,0,.18);
+                white-space: nowrap;
+            }
+            #ocdj-search-filters[open] #ocdj-search-filter-options {
+                display: flex;
+            }
+            #ocdj-search-filter-options label {
+                display: flex;
+                align-items: center;
+                gap: 2px;
+            }
+            @media (max-width: 600px) {
+                #ocdj-search-container {
+                    top: 0;
+                    right: 0;
+                    left: 0;
+                    width: 100%;
+                    max-width: none;
+                    padding: 8px 10px;
+                    border-radius: 0 0 8px 8px;
+                }
+                #ocdj-search-row {
+                    padding-right: 38px;
+                }
+                #ocdj-search {
+                    flex: 1;
+                    width: 100%;
+                    font-size: 16px;
+                }
+                #ocdj-search-button {
+                    display: none;
+                }
+                #ocdj-search-mobile-toggle {
+                    position: absolute;
+                    top: 8px;
+                    right: 10px;
+                    display: inline-flex;
+                    align-items: center;
+                    justify-content: center;
+                    width: 32px;
+                    height: 32px;
+                    padding: 0;
+                    border: 0;
+                    border-radius: 5px;
+                    background: #2d6cdf;
+                    color: #fff;
+                    font-size: 19px;
+                    cursor: pointer;
+                }
+                #ocdj-search-container.mobile-collapsed {
+                    left: auto;
+                    width: auto;
+                    padding: 5px;
+                    border-radius: 8px;
+                }
+                #ocdj-search-container.mobile-collapsed #ocdj-search-row {
+                    display: none;
+                }
+                #ocdj-search-container.mobile-collapsed #ocdj-search-mobile-toggle {
+                    position: static;
+                    width: 38px;
+                    height: 34px;
+                }
+                #ocdj-search-filter-options {
+                    flex-wrap: wrap;
+                    max-width: calc(100vw - 40px);
+                    white-space: normal;
+                }
+            }
+        `;
+        document.head.appendChild(style);
+
         const container = document.createElement('div');
-        container.style.cssText =
-            'position:fixed;top:10px;right:10px;z-index:999999;background:#fff;' +
-            'padding:8px;border:1px solid #ccc;border-radius:8px;' +
-            'box-shadow:0 2px 10px rgba(0,0,0,.2);display:flex;' +
-            'align-items:center;gap:6px;';
+        container.id = 'ocdj-search-container';
+        const mobileCollapsed =
+            localStorage.getItem('ocdj-search-mobile-collapsed') === 'true';
+        if (mobileCollapsed) {
+            container.classList.add('mobile-collapsed');
+        }
+
+        const mobileToggle = document.createElement('button');
+        mobileToggle.id = 'ocdj-search-mobile-toggle';
+        mobileToggle.type = 'button';
+        mobileToggle.textContent = mobileCollapsed ? '⌕' : '×';
+        mobileToggle.title = mobileCollapsed
+            ? 'Expand inventory search'
+            : 'Collapse inventory search';
+        mobileToggle.setAttribute('aria-label', mobileToggle.title);
+        mobileToggle.setAttribute('aria-expanded', String(!mobileCollapsed));
+
+        const searchRow = document.createElement('div');
+        searchRow.id = 'ocdj-search-row';
 
         const input = document.createElement('input');
         input.id = 'ocdj-search';
         input.type = 'text';
         input.placeholder = 'Search inventory...';
-        input.style.cssText = 'padding:6px;width:220px;';
+        input.setAttribute('aria-label', 'Search inventory');
 
         const categoryGroup = document.createElement('div');
-        categoryGroup.style.cssText = 'display:flex;align-items:center;gap:6px;';
+        categoryGroup.style.cssText =
+            'display:flex;align-items:center;gap:6px;';
         const categories = [
             { name: 'New', id: '3' },
-            { name: 'Used', id: '2' },
-            { name: 'Demo', id: '1' }
+            { name: 'Used', id: '1' },
+            { name: 'Demo', id: '2' }
         ].map(category => {
             const label = document.createElement('label');
-            label.style.cssText = 'display:flex;align-items:center;gap:2px;';
 
             const checkbox = document.createElement('input');
             checkbox.type = 'checkbox';
-            checkbox.checked = true;
+            checkbox.checked = urlCategoryIds
+                ? urlCategoryIds.has(category.id)
+                : true;
             label.append(checkbox, document.createTextNode(category.name));
             categoryGroup.appendChild(label);
 
             return { ...category, checkbox };
         });
+        const localOnlyLabel = document.createElement('label');
+        const localOnlyCheckbox = document.createElement('input');
+        localOnlyCheckbox.type = 'checkbox';
+        localOnlyCheckbox.checked = filterMatch
+            ? filterMatch[2] === 's47Ex0'
+            : true;
+        localOnlyCheckbox.setAttribute('aria-label', 'Local search only');
+        localOnlyLabel.append(
+            localOnlyCheckbox,
+            document.createTextNode('Local only')
+        );
+
+        const filters = document.createElement('details');
+        filters.id = 'ocdj-search-filters';
+        const filtersSummary = document.createElement('summary');
+        filtersSummary.textContent = 'Filters';
+        const filterOptions = document.createElement('div');
+        filterOptions.id = 'ocdj-search-filter-options';
+        filterOptions.append(categoryGroup, localOnlyLabel);
+        filters.append(filtersSummary, filterOptions);
 
         const button = document.createElement('button');
+        button.id = 'ocdj-search-button';
         button.textContent = 'Search';
-        button.style.cssText = 'padding:6px 10px;cursor:pointer;';
+        button.type = 'button';
 
         function search() {
             const term = input.value.trim();
-            if (!term) return;
 
             const categoryIds = categories
                 .filter(category => category.checkbox.checked)
@@ -63,19 +231,21 @@
                 .join('');
             if (!categoryIds) return;
 
-            const filter = [{
-                tsearch: [{
-                    n: 'fieldsearch',
-                    v: term.toLowerCase(),
-                    s: 1
-                }]
-            }];
-            const encoded = btoa(JSON.stringify(filter));
-            const prefix = `a9b${categoryIds}q0-10x0-0-0+`;
+            const searchFilter = term
+                ? '+' + btoa(JSON.stringify([{
+                    tsearch: [{
+                        n: 'fieldsearch',
+                        v: term.toLowerCase(),
+                        s: 1
+                    }]
+                }]))
+                : '';
+            const dealerFilter = localOnlyCheckbox.checked ? 's47Ex0' : 'x0';
+            const prefix = `a9b${categoryIds}q0-10${dealerFilter}-0-0`;
 
             window.location.href =
                 'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
-                prefix + encoded;
+                prefix + searchFilter;
         }
 
         button.addEventListener('click', search);
@@ -98,9 +268,55 @@
             }
         });
 
-        container.append(input, categoryGroup, button);
+        function setMobileCollapsed(collapsed) {
+            container.classList.toggle('mobile-collapsed', collapsed);
+            localStorage.setItem(
+                'ocdj-search-mobile-collapsed',
+                String(collapsed)
+            );
+            mobileToggle.textContent = collapsed ? '⌕' : '×';
+            mobileToggle.title = collapsed
+                ? 'Expand inventory search'
+                : 'Collapse inventory search';
+            mobileToggle.setAttribute('aria-label', mobileToggle.title);
+            mobileToggle.setAttribute('aria-expanded', String(!collapsed));
+        }
+
+        mobileToggle.addEventListener('click', () => {
+            const wasCollapsed = container.classList.contains('mobile-collapsed');
+            setMobileCollapsed(!wasCollapsed);
+            if (wasCollapsed && window.innerWidth <= 600) {
+                input.focus({ preventScroll: true });
+            }
+        });
+
+        searchRow.append(input, button, filters);
+        container.append(searchRow, mobileToggle);
         document.body.appendChild(container);
-        window.setTimeout(() => input.focus(), 250);
+
+        let lastObservedFilterId = filterState.filterId;
+        function syncFiltersFromUrl() {
+            const currentFilterState = getInventoryFilterState(window.location.search);
+            if (currentFilterState.filterId === lastObservedFilterId) return;
+            lastObservedFilterId = currentFilterState.filterId;
+            if (!currentFilterState.match) return;
+
+            const selectedCategoryIds = new Set(currentFilterState.match[1]);
+            categories.forEach(category => {
+                category.checkbox.checked = selectedCategoryIds.has(category.id);
+            });
+            localOnlyCheckbox.checked = currentFilterState.match[2] === 's47Ex0';
+        }
+
+        const filterObserver = new MutationObserver(syncFiltersFromUrl);
+        filterObserver.observe(document.body, { childList: true, subtree: true });
+        window.addEventListener('popstate', syncFiltersFromUrl);
+        window.setTimeout(() => {
+            if (window.innerWidth > 600 ||
+                !container.classList.contains('mobile-collapsed')) {
+                input.focus({ preventScroll: true });
+            }
+        }, 250);
     }
 
     if (document.readyState === 'loading') {
