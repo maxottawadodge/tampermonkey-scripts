@@ -1,10 +1,10 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      4.1
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.1
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.1
-// @description  Auto-populate DealerSocket searches and add click-to-call buttons
+// @version      4.2
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.2
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.2
+// @description  Auto-populate DealerSocket searches and add copy/contact tools
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*
 // @run-at       document-start
@@ -57,6 +57,7 @@
     const observedFrames = new WeakSet();
     const phonePattern =
         /(^|[^\d])(\+?(?:\d{1,3}[ .-]?)?(?:\(\d{3}\)|\d{3})[ .-]?\d{3}[ .-]?\d{4}|\d{3}[.-]\d{4})(?!\d)/g;
+    const emailPattern = /[A-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?(?:\.[A-Z0-9](?:[A-Z0-9-]*[A-Z0-9])?)+/gi;
     const vinPattern = /\b[A-HJ-NPR-Z0-9]{17}\b/g;
     const cdjrWmis = new Set([
         '1C3', '1C4', '1C6', '2C3', '2C4', '2C7', '3C3', '3C4', '3C6',
@@ -169,6 +170,7 @@
 
         if (control.dataset.dealerSocketVinCopy === 'true' ||
             control.dataset.dealerSocketPhoneCopy === 'true' ||
+            control.dataset.dealerSocketEmailCopy === 'true' ||
             control.dataset.dealerSocketNameCopy === 'true' ||
             control.dataset.dealerSocketAddressCopy === 'true') {
             event.preventDefault();
@@ -212,6 +214,7 @@
             'dealerSocketVinCopy',
             'dealerSocketPhoneLink',
             'dealerSocketPhoneCopy',
+            'dealerSocketEmailCopy',
             'dealerSocketNameCopy',
             'dealerSocketMapsLink',
             'dealerSocketAddressCopy'
@@ -389,6 +392,78 @@
                     doc, phone, 'phone number', 'dealerSocketPhoneCopy'
                 ));
             }
+        }
+    }
+
+    function addEmailCopyButtons(textNodes) {
+        if (!textNodes.length) return;
+        const positions = [];
+        let text = '';
+        for (const node of textNodes) {
+            const start = text.length;
+            text += node.nodeValue || '';
+            positions.push({ node, start, end: text.length });
+        }
+        if (!text.includes('@')) return;
+
+        emailPattern.lastIndex = 0;
+        let match;
+        const matches = [];
+        while ((match = emailPattern.exec(text)) !== null) {
+            matches.push({ email: match[0], end: match.index + match[0].length });
+        }
+
+        for (let index = matches.length - 1; index >= 0; index--) {
+            const { email, end } = matches[index];
+            const position = positions.find(item => end <= item.end && end > item.start);
+            if (!position) continue;
+
+            const existing = getFollowingControls(position.node).find(control =>
+                control.dataset.dealerSocketEmailCopy === 'true' &&
+                control.dataset.copyValue === email
+            );
+            if (existing) continue;
+
+            const range = position.node.ownerDocument.createRange();
+            range.setStart(position.node, end - position.start);
+            range.collapse(true);
+            range.insertNode(createCopyButton(
+                position.node.ownerDocument,
+                email,
+                'email address',
+                'dealerSocketEmailCopy'
+            ));
+        }
+    }
+
+    function addEmailCopyButtonsToLinks(root) {
+        if (!root?.querySelectorAll) return;
+        const links = [...root.querySelectorAll('a[href]')];
+        if (root.nodeType === Node.ELEMENT_NODE && root.matches('a[href]')) {
+            links.unshift(root);
+        }
+
+        for (const link of links) {
+            const href = link.getAttribute('href') || '';
+            const source = /^mailto:/i.test(href)
+                ? decodeURIComponent(href.slice(7).split('?')[0])
+                : link.textContent;
+            emailPattern.lastIndex = 0;
+            const email = source.match(emailPattern)?.[0];
+            if (!email) continue;
+
+            const existing = getFollowingControls(link).find(control =>
+                control.dataset.dealerSocketEmailCopy === 'true' &&
+                control.dataset.copyValue === email
+            );
+            if (existing) continue;
+
+            link.after(createCopyButton(
+                link.ownerDocument,
+                email,
+                'email address',
+                'dealerSocketEmailCopy'
+            ));
         }
     }
 
@@ -572,6 +647,7 @@
             node.closest(ignoredPhoneElements)) return;
 
         const doc = node.nodeType === Node.DOCUMENT_NODE ? node : node.ownerDocument;
+        addEmailCopyButtonsToLinks(node);
         const blocks = new Set();
         if (node.nodeType === Node.TEXT_NODE) {
             if (node.parentElement && !node.parentElement.closest(ignoredPhoneElements)) {
@@ -596,7 +672,9 @@
             const textNodes = getBlockTextNodes(block);
             textNodes.forEach(addAddressMapButton);
             addPhoneLinks(textNodes);
-            addVinLinks(getBlockTextNodes(block));
+            const currentTextNodes = getBlockTextNodes(block);
+            addVinLinks(currentTextNodes);
+            addEmailCopyButtons(getBlockTextNodes(block));
         }
     }
 
