@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      4.3
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.3
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.3
+// @version      4.4
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.4
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.4
 // @description  Auto-populate DealerSocket searches and add copy/contact tools
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*
@@ -136,6 +136,37 @@
         button.dataset.copyValue = value;
         button.dataset.copyLabel = label;
         return button;
+    }
+
+    function keepControlVisible(control, sourceNode, rightOffset = 0) {
+        const element = sourceNode.nodeType === Node.TEXT_NODE
+            ? sourceNode.parentElement
+            : sourceNode;
+        const inlineValue = element?.closest('.ds-inline-edit-value');
+        if (!inlineValue) return;
+
+        const controlWidth = 18;
+        const reservedWidth = rightOffset + controlWidth;
+        const previousWidth = Number(inlineValue.dataset.dealerSocketControlSpace) || 0;
+        if (reservedWidth > previousWidth) {
+            if (!inlineValue.dataset.dealerSocketOriginalPaddingRight) {
+                inlineValue.dataset.dealerSocketOriginalPaddingRight =
+                    inlineValue.ownerDocument.defaultView
+                        ?.getComputedStyle(inlineValue).paddingRight || '0px';
+            }
+            inlineValue.dataset.dealerSocketControlSpace = String(reservedWidth);
+            inlineValue.style.boxSizing = 'border-box';
+            inlineValue.style.position = 'relative';
+            inlineValue.style.paddingRight =
+                `calc(${inlineValue.dataset.dealerSocketOriginalPaddingRight} + ${reservedWidth}px)`;
+        }
+
+        control.style.position = 'absolute';
+        control.style.right = `${rightOffset}px`;
+        control.style.top = '50%';
+        control.style.transform = 'translateY(-50%)';
+        control.style.zIndex = '1';
+        control.style.marginLeft = '0';
     }
 
     async function copyText(doc, value) {
@@ -427,12 +458,14 @@
             const range = position.node.ownerDocument.createRange();
             range.setStart(position.node, end - position.start);
             range.collapse(true);
-            range.insertNode(createCopyButton(
+            const copyButton = createCopyButton(
                 position.node.ownerDocument,
                 email,
                 'email address',
                 'dealerSocketEmailCopy'
-            ));
+            );
+            range.insertNode(copyButton);
+            keepControlVisible(copyButton, position.node);
         }
     }
 
@@ -456,14 +489,19 @@
                 control.dataset.dealerSocketEmailCopy === 'true' &&
                 control.dataset.copyValue === email
             );
-            if (existing) continue;
+            if (existing) {
+                keepControlVisible(existing, link);
+                continue;
+            }
 
-            link.after(createCopyButton(
+            const copyButton = createCopyButton(
                 link.ownerDocument,
                 email,
                 'email address',
                 'dealerSocketEmailCopy'
-            ));
+            );
+            link.after(copyButton);
+            keepControlVisible(copyButton, link);
         }
     }
 
@@ -492,18 +530,18 @@
         }
         if (next?.dataset?.dealerSocketNameCopy === 'true') {
             next.dataset.copyValue = name;
+            keepControlVisible(next, nameElement);
             return;
         }
 
-        nameElement.parentNode.insertBefore(
-            createCopyButton(
-                nameElement.ownerDocument,
-                name,
-                'name',
-                'dealerSocketNameCopy'
-            ),
-            nameElement.nextSibling
+        const copyButton = createCopyButton(
+            nameElement.ownerDocument,
+            name,
+            'name',
+            'dealerSocketNameCopy'
         );
+        nameElement.parentNode.insertBefore(copyButton, nameElement.nextSibling);
+        keepControlVisible(copyButton, nameElement);
     }
 
     function createMapsLink(doc, address) {
@@ -576,15 +614,19 @@
             existing.href =
                 `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
             existing.title = `Search Google Maps for ${address}`;
+            keepControlVisible(existing, textNode, 18);
         } else {
             const range = textNode.ownerDocument.createRange();
             range.setStart(textNode, textNode.length);
             range.collapse(true);
-            range.insertNode(createMapsLink(textNode.ownerDocument, address));
+            const mapsLink = createMapsLink(textNode.ownerDocument, address);
+            range.insertNode(mapsLink);
+            keepControlVisible(mapsLink, textNode, 18);
         }
 
         if (existingCopy) {
             existingCopy.dataset.copyValue = address;
+            keepControlVisible(existingCopy, textNode);
             return;
         }
 
@@ -604,6 +646,7 @@
             range.collapse(true);
             range.insertNode(copyButton);
         }
+        keepControlVisible(copyButton, textNode);
     }
 
     function processNameCopyNode(node) {
