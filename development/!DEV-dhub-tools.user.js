@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.10
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.10
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.10
+// @version      1.11
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.11
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.11
 // @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
 // @match        https://app.demandhub.co/*
 // @grant        none
@@ -15,18 +15,7 @@
     const phoneRegex =
         /(^|[^\d])(\+\d{1,3}[ .-]?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}|(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)/;
     const searchColor = '#287397';
-    const copyColor = '#2f8f5b';
-    const nameSelectors = [
-        'span[name="editName"]',
-        '[data-testid*="contact-name"]',
-        '[data-testid*="lead-name"]',
-        '[data-testid*="customer-name"]',
-        '[class*="contact-name"]',
-        '[class*="lead-name"]',
-        '[class*="customer-name"]',
-        '[class*="full-name"]',
-        'input[autocomplete="name"]'
-    ].join(',');
+    const nameElementId = 'mb-edit-contact-name-text';
 
     function createSearchLink(phone) {
         const link = document.createElement('a');
@@ -52,20 +41,36 @@
         button.title = `Copy ${label}`;
         button.setAttribute('aria-label', `Copy ${label}`);
         button.style.cssText =
-            `margin-left:5px;padding:2px 4px;background:${copyColor};color:#fff;` +
-            'border:0;border-radius:4px;font:inherit;font-size:0.85em;' +
-            'font-weight:600;cursor:pointer;vertical-align:middle;';
-        button.textContent = 'Copy';
+            'display:inline-flex;align-items:center;margin-left:3px;padding:1px 2px;' +
+            'border:0;background:transparent;color:#2d6cdf;cursor:pointer;' +
+            'vertical-align:middle;line-height:1;';
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('width', '12');
+        icon.setAttribute('height', '12');
+        icon.setAttribute('fill', 'none');
+        icon.setAttribute('stroke', 'currentColor');
+        icon.setAttribute('stroke-width', '2');
+        icon.setAttribute('stroke-linecap', 'round');
+        icon.setAttribute('stroke-linejoin', 'round');
+        icon.setAttribute('aria-hidden', 'true');
+        const outline = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        outline.setAttribute('d', 'M8 8V4h12v12h-4M4 8h12v12H4z');
+        icon.appendChild(outline);
+        button.appendChild(icon);
 
         button.addEventListener('click', async () => {
             try {
                 await navigator.clipboard.writeText(button.dataset.copyValue);
-                button.textContent = 'Copied!';
+                button.replaceChildren(document.createTextNode('✓'));
+                button.title = `Copied ${label}`;
                 window.setTimeout(() => {
-                    button.textContent = 'Copy';
-                }, 1500);
+                    if (button.isConnected) {
+                        button.replaceChildren(icon);
+                        button.title = `Copy ${label}`;
+                    }
+                }, 1000);
             } catch (error) {
-                button.textContent = 'Copy failed';
                 console.error(`Could not copy ${label} to clipboard:`, error);
             }
         });
@@ -81,37 +86,25 @@
         return (value || '').replace(/\s+/g, ' ').trim();
     }
 
-    function isLikelyContactName(value) {
-        if (!value || value.length > 80 || /[\d@]/.test(value)) return false;
-        const parts = value.split(/\s+/);
-        return parts.length >= 2 && parts.length <= 6 &&
-            parts.every(part => /^[\p{L}\p{M}][\p{L}\p{M}.'’,\-]*$/u.test(part));
-    }
+    function addNameCopyButton() {
+        const nameElement = document.getElementById(nameElementId);
+        if (!nameElement || !nameElement.parentNode) return;
 
-    function addNameCopyButtons(root) {
-        if (!root?.querySelectorAll) return;
-        const elements = [...root.querySelectorAll(nameSelectors)];
-        if (root.nodeType === Node.ELEMENT_NODE && root.matches(nameSelectors)) {
-            elements.unshift(root);
+        const name = getNameValue(nameElement);
+        if (!name) return;
+
+        let next = nameElement.nextSibling;
+        while (next && next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()) {
+            next = next.nextSibling;
+        }
+        if (next?.dataset?.demandHubNameCopy === 'true') {
+            next.dataset.copyValue = name;
+            return;
         }
 
-        for (const element of elements) {
-            const name = getNameValue(element);
-            if (!isLikelyContactName(name) || !element.parentNode) continue;
-
-            let next = element.nextSibling;
-            while (next && next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()) {
-                next = next.nextSibling;
-            }
-            if (next?.dataset?.demandHubNameCopy === 'true') {
-                next.dataset.copyValue = name;
-                continue;
-            }
-
-            const button = createCopyButton(name, 'name');
-            button.dataset.demandHubNameCopy = 'true';
-            element.parentNode.insertBefore(button, element.nextSibling);
-        }
+        const button = createCopyButton(name, 'name');
+        button.dataset.demandHubNameCopy = 'true';
+        nameElement.parentNode.insertBefore(button, nameElement.nextSibling);
     }
 
     function linkPhoneText(textNode) {
@@ -145,16 +138,15 @@
 
     function processNode(node) {
         if (node.nodeType === Node.TEXT_NODE) {
-            const parent = node.parentElement;
             linkPhoneText(node);
-            addNameCopyButtons(parent);
+            addNameCopyButton();
             return;
         }
 
         if (node.nodeType !== Node.ELEMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_NODE) return;
 
-        addNameCopyButtons(node);
+        addNameCopyButton();
         const walker = document.createTreeWalker(node, NodeFilter.SHOW_TEXT);
         const textNodes = [];
         let textNode;
