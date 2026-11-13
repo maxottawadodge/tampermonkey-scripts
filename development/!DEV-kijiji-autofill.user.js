@@ -1,11 +1,11 @@
 // ==UserScript==
 // @name         !DEV Kijiji Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.0
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js?v=1.0
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js?v=1.0
+// @version      1.1
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js?v=1.1
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js?v=1.1
 // @description  Autofill Kijiji vehicle ads from copied scraper rows
-// @match        https://www.kijiji.ca/p-admarkt-post-ad.html*
+// @match        https://www.kijiji.ca/p-post-ad.html*
 // @grant        none
 // ==/UserScript==
 
@@ -301,6 +301,39 @@
         return true;
     }
 
+    function findSelectOption(select, value, aliases = []) {
+        if (select.disabled) return null;
+        const targets = [value, ...aliases].map(normalize);
+        const options = [...select.options].filter(option =>
+            !option.disabled && normalize(option.value)
+        );
+        return options.find(option => targets.some(target =>
+            normalize(option.textContent) === target ||
+            normalize(option.value) === target
+        )) || options.find(option => {
+            const text = normalize(option.textContent);
+            return targets.some(target =>
+                text.startsWith(`${target} `) ||
+                text.startsWith(`${target},`) ||
+                text.startsWith(`${target} (`)
+            );
+        }) || null;
+    }
+
+    async function selectOption(select, value, aliases = []) {
+        for (let attempt = 0; attempt < 10; attempt++) {
+            const option = findSelectOption(select, value, aliases);
+            if (option) {
+                select.value = option.value;
+                select.dispatchEvent(new Event('input', { bubbles: true }));
+                select.dispatchEvent(new Event('change', { bubbles: true }));
+                return true;
+            }
+            await new Promise(resolve => window.setTimeout(resolve, 250));
+        }
+        return false;
+    }
+
     async function fillField(element, value, aliases = []) {
         element.scrollIntoView({ block: 'center', inline: 'nearest' });
         if (element instanceof HTMLButtonElement ||
@@ -316,6 +349,9 @@
         if (element.getAttribute('role') === 'combobox') {
             const valueElement = getValueElement(element);
             if (valueElement) {
+                if (valueElement instanceof HTMLSelectElement) {
+                    return selectOption(valueElement, value, aliases);
+                }
                 if (!setNativeValue(valueElement, value)) return false;
             } else {
                 element.click();
@@ -338,23 +374,19 @@
 
         const valueElement = getValueElement(element);
         if (valueElement && valueElement.matches('select')) {
-            const option = [...valueElement.options].find(item =>
-                [value, ...aliases].some(target =>
-                    normalize(item.textContent) === normalize(target) ||
-                    normalize(item.value) === normalize(target)
-                )
-            );
-            if (!option) return false;
-            valueElement.value = option.value;
-            valueElement.dispatchEvent(new Event('input', { bubbles: true }));
-            valueElement.dispatchEvent(new Event('change', { bubbles: true }));
-            return true;
+            return selectOption(valueElement, value, aliases);
         }
 
         return Boolean(valueElement && setNativeValue(valueElement, value));
     }
 
     async function fillVehicleForm(vehicle) {
+        const bodyTypeAliases = {
+            'commercial van': ['Van'],
+            minivan: ['Van', 'Minivan/Van'],
+            suv: ['Crossover', 'SUV/Crossover'],
+            truck: ['Pickup', 'Pickup Truck']
+        };
         const fields = [
             ['Title', ['ad title', 'listing title'], vehicle.title],
             ['Description', [], vehicle.description],
@@ -363,10 +395,18 @@
             ['Make', ['manufacturer'], vehicle.make],
             ['Model', [], vehicle.model],
             ['Trim', ['vehicle trim'], vehicle.trim],
-            ['Body type', ['body style'], vehicle.bodyStyle],
+            [
+                'Body type',
+                ['body style'],
+                vehicle.bodyStyle,
+                bodyTypeAliases[normalize(vehicle.bodyStyle)] || []
+            ],
             ['Kilometers', ['kilometres', 'mileage', 'odometer'], vehicle.mileage],
-            ['Exterior colour', ['exterior color'], vehicle.exteriorColor],
-            ['Interior colour', ['interior color'], vehicle.interiorColor],
+            [
+                'Colour',
+                ['color', 'exterior colour', 'exterior color'],
+                vehicle.exteriorColor
+            ],
             ['Fuel type', ['fuel'], vehicle.fuelType],
             ['Transmission', ['transmission type'], vehicle.transmission],
             ['Condition', ['vehicle condition'], vehicle.condition]
@@ -374,10 +414,10 @@
         const failed = [];
         let filledCount = 0;
 
-        for (const [label, aliases, value] of fields) {
+        for (const [label, aliases, value, optionAliases = []] of fields) {
             if (!value) continue;
             const element = findField(label, aliases);
-            if (element && await fillField(element, value)) {
+            if (element && await fillField(element, value, optionAliases)) {
                 filledCount++;
             } else {
                 failed.push(label);
