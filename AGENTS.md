@@ -8,3 +8,4 @@
 - After making requested changes outside `production/`, always commit and push them to the GitHub remote, regardless of folder. This includes development scripts, Google Apps Scripts, documentation, and other requested files.
 - Never commit or push files in `production/` unless the user explicitly authorizes production work. Keep each commit and push limited to the requested changes; exclude unrelated or pre-existing work.
 - Before committing or pushing, verify the current branch, remote, and worktree. If pushing would include unauthorized production files or unrelated changes, or the correct destination is unclear, stop and ask the user rather than pushing.
+- When copying development scripts over to their production counterparts always keep the production script name, download url, upload url the same. do carry over the version number from the development to the production script. Always update readme during this.
