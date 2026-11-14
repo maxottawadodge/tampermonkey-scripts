@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.12
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.12
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.12
+// @version      1.13
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.13
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.13
 // @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
 // @match        https://app.demandhub.co/*
 // @grant        none
@@ -16,6 +16,7 @@
         /(^|[^\d])(\+\d{1,3}[ .-]?(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4}|(?:\(\d{3}\)|\d{3})[-.\s]?\d{3}[-.\s]?\d{4})(?!\d)/;
     const searchColor = '#287397';
     const nameElementId = 'mb-edit-contact-name-text';
+    const processedPhoneTextNodes = new WeakSet();
 
     function createSearchLink(phone) {
         const link = document.createElement('a');
@@ -32,6 +33,33 @@
             `background:${searchColor};color:#fff;border-radius:4px;` +
             'font-weight:600;text-decoration:none;vertical-align:middle;';
         link.textContent = 'DSOCKET';
+        return link;
+    }
+
+    function createPhoneLink(phone) {
+        const link = document.createElement('a');
+        const digits = phone.replace(/\D/g, '');
+        link.href = `tel:${phone.startsWith('+') ? '+' : ''}${digits}`;
+        link.title = `Call ${phone}`;
+        link.setAttribute('aria-label', `Call ${phone}`);
+        link.style.cssText =
+            'display:inline-flex;align-items:center;margin-left:4px;' +
+            'vertical-align:middle;text-decoration:none;';
+
+        const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+        icon.setAttribute('viewBox', '0 0 24 24');
+        icon.setAttribute('width', '16');
+        icon.setAttribute('height', '16');
+        icon.setAttribute('fill', 'currentColor');
+        icon.setAttribute('aria-hidden', 'true');
+
+        const handset = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+        handset.setAttribute(
+            'd',
+            'M6.62 10.79a15.05 15.05 0 0 0 6.59 6.59l2.2-2.2a1 1 0 0 1 1.01-.24c1.12.37 2.33.56 3.58.56a1 1 0 0 1 1 1V20a1 1 0 0 1-1 1C10.61 21 3 13.39 3 4a1 1 0 0 1 1-1h3.5a1 1 0 0 1 1 1c0 1.25.2 2.46.56 3.58a1 1 0 0 1-.25 1.01z'
+        );
+        icon.appendChild(handset);
+        link.appendChild(icon);
         return link;
     }
 
@@ -80,9 +108,11 @@
     }
 
     function getNameValue(element) {
-        const value = element.matches('input, textarea')
-            ? element.value
-            : element.innerText || element.textContent;
+        if (element.matches('input, textarea')) return element.value.trim();
+
+        const clone = element.cloneNode(true);
+        clone.querySelector('[data-demand-hub-name-copy="true"]')?.remove();
+        const value = clone.innerText || clone.textContent;
         return (value || '').replace(/\s+/g, ' ').trim();
     }
 
@@ -93,21 +123,34 @@
         const name = getNameValue(nameElement);
         if (!name) return;
 
-        let next = nameElement.nextSibling;
-        while (next && next.nodeType === Node.TEXT_NODE && !next.nodeValue.trim()) {
-            next = next.nextSibling;
+        let existingButton;
+        if (nameElement.matches('input, textarea')) {
+            const nextElement = nameElement.nextElementSibling;
+            if (nextElement?.matches('[data-demand-hub-name-copy="true"]')) {
+                existingButton = nextElement;
+            }
+        } else {
+            existingButton = nameElement.querySelector(
+                '[data-demand-hub-name-copy="true"]'
+            );
         }
-        if (next?.dataset?.demandHubNameCopy === 'true') {
-            next.dataset.copyValue = name;
+        if (existingButton) {
+            existingButton.dataset.copyValue = name;
             return;
         }
 
         const button = createCopyButton(name, 'name');
         button.dataset.demandHubNameCopy = 'true';
-        nameElement.parentNode.insertBefore(button, nameElement.nextSibling);
+        if (nameElement.matches('input, textarea')) {
+            nameElement.insertAdjacentElement('afterend', button);
+        } else {
+            nameElement.appendChild(button);
+        }
     }
 
     function linkPhoneText(textNode) {
+        if (processedPhoneTextNodes.has(textNode)) return;
+
         const parent = textNode.parentElement;
         if (!parent || parent.closest('a, button, script, style, textarea')) return;
 
@@ -118,17 +161,14 @@
         const phone = match[2];
         const start = match.index + match[1].length;
         const end = start + phone.length;
-        const digits = phone.replace(/\D/g, '');
         const fragment = document.createDocumentFragment();
 
         if (start > 0) fragment.appendChild(document.createTextNode(text.slice(0, start)));
 
-        const callLink = document.createElement('a');
-        callLink.href = `tel:${phone.startsWith('+') ? '+' : ''}${digits}`;
-        callLink.title = `Call ${phone}`;
-        callLink.setAttribute('aria-label', `Call ${phone}`);
-        callLink.textContent = phone;
-        fragment.appendChild(callLink);
+        const phoneText = document.createTextNode(phone);
+        processedPhoneTextNodes.add(phoneText);
+        fragment.appendChild(phoneText);
+        fragment.appendChild(createPhoneLink(phone));
         fragment.appendChild(createSearchLink(phone));
         fragment.appendChild(createCopyButton(phone));
 
