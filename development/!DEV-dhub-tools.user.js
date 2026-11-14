@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.13
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.13
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.13
+// @version      1.14
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.14
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.14
 // @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
 // @match        https://app.demandhub.co/*
 // @grant        none
@@ -87,7 +87,8 @@
         icon.appendChild(outline);
         button.appendChild(icon);
 
-        button.addEventListener('click', async () => {
+        button.addEventListener('click', async event => {
+            event.stopPropagation();
             try {
                 await navigator.clipboard.writeText(button.dataset.copyValue);
                 button.replaceChildren(document.createTextNode('✓'));
