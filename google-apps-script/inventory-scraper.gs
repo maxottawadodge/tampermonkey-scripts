@@ -1,4 +1,4 @@
-// Version: 1.0.8
+// Version: 1.0.9
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -138,6 +138,7 @@ function startInventoryScrape() {
 function fillBlankInventoryDescriptions() {
     if (resumeInventoryScrapeIfRunning_()) return;
 
+    const properties = PropertiesService.getScriptProperties();
     const apiKey = PropertiesService.getUserProperties().getProperty(
         INVENTORY_SCRAPER_CONFIG.apiKeyProperty
     );
