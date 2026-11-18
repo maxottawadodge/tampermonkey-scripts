@@ -1,4 +1,4 @@
-// Version: 1.1.7
+// Version: 1.1.8
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -331,6 +331,7 @@ function processPriceCheck_(continuationOnly) {
         const timestamp = new Date(progress.timestamp);
         const historyEntries = [];
         const priceUpdates = new Map();
+        const descriptionUpdates = new Map();
         const statusUpdates = new Map();
         const seenStocks = new Set(progress.seenStocks);
         let requestCount = 0;
@@ -397,6 +398,23 @@ function processPriceCheck_(continuationOnly) {
                 ]);
                 const sheetRow = progress.headerRow + index + 1;
                 priceUpdates.set(sheetRow, currentPrice);
+                if (columns.description) {
+                    const description = String(row[columns.description - 1] || '');
+                    if (description.trim()) {
+                        const updatedDescription = updateInventoryDescriptionPrice_(
+                            description,
+                            currentPrice
+                        );
+                        if (updatedDescription === null) {
+                            progress.errorCount++;
+                            Logger.log(
+                                `Price scan warning: Stock ${stock} price was updated, but its description did not contain an OMVIC price line.`
+                            );
+                        } else if (updatedDescription !== description) {
+                            descriptionUpdates.set(sheetRow, updatedDescription);
+                        }
+                    }
+                }
                 if (
                     columns.status &&
                     splitStatusValues_(row[columns.status - 1])
@@ -427,6 +445,9 @@ function processPriceCheck_(continuationOnly) {
         }
 
         writeColumnUpdates_(trackerSheet, columns.price, priceUpdates);
+        if (columns.description) {
+            writeColumnUpdates_(trackerSheet, columns.description, descriptionUpdates);
+        }
         if (columns.status) {
             writeColumnUpdates_(trackerSheet, columns.status, statusUpdates);
         }
@@ -573,6 +594,7 @@ function getTrackerColumns_(sheet) {
                 stock,
                 url,
                 price,
+                description: headers.get('description') || 0,
                 year: headers.get('year') || 0,
                 make: headers.get('make') || 0,
                 model: headers.get('model') || 0,
@@ -727,6 +749,15 @@ function parsePrice_(value) {
     if (!/^-?\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
     const price = Number(normalized);
     return Number.isFinite(price) ? price : null;
+}
+
+function updateInventoryDescriptionPrice_(description, price) {
+    const priceLine = /^Price:[ \t]*(?:\$[ \t]*[\d,]+(?:\.\d{1,2})?|Contact us for pricing)[ \t]+plus tax and licensing\.\r?$/im;
+    if (!priceLine.test(description)) return null;
+    return description.replace(
+        priceLine,
+        `Price: $${price} plus tax and licensing.`
+    );
 }
 
 function formatVehicleName_(row, columns) {
