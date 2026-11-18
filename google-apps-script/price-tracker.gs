@@ -1,4 +1,4 @@
-// Version: 1.1.8
+// Version: 1.1.9
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -407,22 +407,37 @@ function processPriceCheck_(continuationOnly) {
                         );
                         if (updatedDescription === null) {
                             progress.errorCount++;
-                            Logger.log(
-                                `Price scan warning: Stock ${stock} price was updated, but its description did not contain an OMVIC price line.`
-                            );
+                            const warning =
+                                `Price scan warning: Stock ${stock} price was updated, but its description did not contain an OMVIC price line.`;
+                            if (columns.status) {
+                                const currentStatus = statusUpdates.get(sheetRow) ||
+                                    row[columns.status - 1];
+                                statusUpdates.set(
+                                    sheetRow,
+                                    addStatusNote_(
+                                        addStatusValue_(currentStatus, 'Review'),
+                                        warning
+                                    )
+                                );
+                            } else {
+                                Logger.log(warning);
+                            }
                         } else if (updatedDescription !== description) {
                             descriptionUpdates.set(sheetRow, updatedDescription);
                         }
                     }
                 }
+                const currentStatus = columns.status
+                    ? statusUpdates.get(sheetRow) || row[columns.status - 1]
+                    : '';
                 if (
                     columns.status &&
-                    splitStatusValues_(row[columns.status - 1])
+                    splitStatusValues_(currentStatus)
                         .some(value => value.toLowerCase() === 'listed')
                 ) {
                     statusUpdates.set(
                         sheetRow,
-                        addStatusValue_(row[columns.status - 1], 'Update Price')
+                        addStatusValue_(currentStatus, 'Update Price')
                     );
                 }
                 progress.changedCount++;
@@ -631,6 +646,14 @@ function addStatusValue_(currentValue, valueToAdd) {
         return statuses.join(', ');
     }
     return [...statuses, valueToAdd].join(', ');
+}
+
+function addStatusNote_(currentValue, note) {
+    const formattedNote = `Notes: ${note}`;
+    const status = String(currentValue || '').trim();
+    return status.includes(formattedNote)
+        ? status
+        : [status, formattedNote].filter(Boolean).join(', ');
 }
 
 function getHistorySheet_(spreadsheet) {

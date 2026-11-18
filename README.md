@@ -72,6 +72,8 @@ Rows with a `Status` column get `Update Price` added alongside `Listed` when
 their price changes. If a stock-number lookup confirms a vehicle is no longer
 listed, `Gone` is added to its Status if it already contains `Sold`;
 otherwise, `Review` is added. Existing status values are preserved.
+If a changed price cannot be synced to the description because its OMVIC price
+line is missing, `Review` and a `Notes:` warning are added to the Status field.
 Rows whose Status contains `Gone` are skipped during price scans.
 This monitors vehicles already in the tracker; it does not add new inventory
 rows. A blank tracker price is recorded as a baseline on the first successful
