@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Marketplace Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.17
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.17
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.17
+// @version      1.18
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.18
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js?v=1.18
 // @description  Autofill Facebook Marketplace vehicle listings from copied spreadsheet rows
 // @match        https://www.facebook.com/marketplace/create/vehicle*
 // @grant        none
@@ -60,6 +60,13 @@
         if (normalized === 'gas') return 'Gasoline';
         return fuelTypes.find(option => normalize(option) === normalized) ||
             (normalized ? 'Other' : '');
+    }
+
+    function normalizeTransmission(value) {
+        const normalized = normalize(value);
+        return /\bmanual\b/.test(normalized) && !/\b(?:automatic|cvt|automated)\b/.test(normalized)
+            ? 'Manual'
+            : 'Automatic';
     }
 
     function getCellText(cell) {
@@ -258,7 +265,7 @@
                 : values.Int.trim(),
             condition: 'Excellent',
             fuelType: normalizeFuelType(values['Fuel Type']),
-            transmission: values.Transmission.trim(),
+            transmission: normalizeTransmission(values.Transmission),
             description: values.Description.trim()
         };
     }
