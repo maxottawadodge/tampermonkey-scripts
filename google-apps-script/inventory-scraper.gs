@@ -1,4 +1,4 @@
-// Version: 1.0.9
+// Version: 1.0.10
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -361,6 +361,7 @@ function processInventoryScrape_() {
                             Utilities.sleep(INVENTORY_SCRAPER_CONFIG.geminiRequestDelayMillis);
                         }
                         geminiRequestCount++;
+                        currentVehicle.stock = existing.stock || currentStock;
                         const generated = generateInventoryCopy_(currentVehicle);
                         descriptionUpdates.set(existing.rowNumber, generated.description);
                         bodyStyleUpdates.set(existing.rowNumber, generated.bodyStyle);
@@ -971,6 +972,9 @@ function formatInventoryDescription_(vehicle, description) {
     return [
         formatted,
         `Price: ${price} plus tax and licensing.`,
+        ...(/^R/i.test(String(vehicle.stock || '').trim())
+            ? ['Previously used as a daily rental']
+            : []),
         '.',
         'For more information or to schedule a test drive, contact us at:',
         '.',
