@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV Kijiji Autofill
 // @namespace    http://tampermonkey.net/
-// @version      1.1
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js?v=1.1
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js?v=1.1
+// @version      1.2
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js
 // @description  Autofill Kijiji vehicle ads from copied scraper rows
 // @match        https://www.kijiji.ca/p-post-ad.html*
 // @grant        none

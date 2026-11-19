@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV DealerSocket Auto Refresh
 // @namespace    http://tampermonkey.net/
-// @version      1.2
-// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js?v=1.2
-// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js?v=1.2
+// @version      1.3
+// @updateURL    https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js
+// @downloadURL  https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js
 // @description  Refresh DealerSocket pages on a repeating interval
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*

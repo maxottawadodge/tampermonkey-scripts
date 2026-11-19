@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.16
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.16
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.16
+// @version      1.17
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js
 // @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
 // @match        https://app.demandhub.co/*
 // @grant        none

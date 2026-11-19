@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.22
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.22
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.22
+// @version      5.23
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none

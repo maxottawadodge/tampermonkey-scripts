@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      4.8
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.8
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.8
+// @version      4.9
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add copy/contact tools
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*
