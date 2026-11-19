@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.14
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.14
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.14
+// @version      1.15
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.15
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.15
 // @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
 // @match        https://app.demandhub.co/*
 // @grant        none
@@ -17,6 +17,9 @@
     const searchColor = '#287397';
     const nameElementId = 'mb-edit-contact-name-text';
     const processedPhoneTextNodes = new WeakSet();
+    const skippedPhoneElements =
+        'a, button, input, select, textarea, script, style, noscript, option, iframe, ' +
+        '[contenteditable]:not([contenteditable="false"]), [role="textbox"]';
 
     function createSearchLink(phone) {
         const link = document.createElement('a');
@@ -153,7 +156,7 @@
         if (processedPhoneTextNodes.has(textNode)) return;
 
         const parent = textNode.parentElement;
-        if (!parent || parent.closest('a, button, script, style, textarea')) return;
+        if (!parent || parent.isContentEditable || parent.closest(skippedPhoneElements)) return;
 
         const text = textNode.nodeValue || '';
         const match = text.match(phoneRegex);

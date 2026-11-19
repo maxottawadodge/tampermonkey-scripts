@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV global phone links
 // @namespace    http://tampermonkey.net/
-// @version      1.5
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.5
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.5
+// @version      1.6
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.6
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.6
 // @description  Add click-to-call links and inline VIN actions
 // @match        *://*/*
 // @exclude      *://dealersocket.com/*
@@ -58,7 +58,7 @@
     }
 
     function isSkipped(element) {
-        return Boolean(element.closest(skippedElements));
+        return element.isContentEditable || Boolean(element.closest(skippedElements));
     }
 
     function createPhoneLink(phone) {
