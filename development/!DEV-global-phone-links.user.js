@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV global phone links
 // @namespace    http://tampermonkey.net/
-// @version      1.6
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.6
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.6
+// @version      1.7
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.7
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.7
 // @description  Add click-to-call links and inline VIN actions
 // @match        *://*/*
 // @exclude      *://dealersocket.com/*
@@ -219,11 +219,112 @@
         while (next && next.nodeType === Node.ELEMENT_NODE &&
             (next.dataset.globalVinLink === 'true' ||
                 next.dataset.globalVinSearch === 'true' ||
-                next.dataset.globalVinCopy === 'true')) {
+                next.dataset.globalVinCopy === 'true' ||
+                next.dataset.globalVinComps === 'true')) {
             controls.push(next);
             next = next.nextSibling;
         }
         return controls;
+    }
+
+    function createVinComparablesButton(vin) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.globalVinComps = 'true';
+        button.textContent = 'Comps';
+        button.title = `Find comparable listings for ${vin}`;
+        button.style.cssText =
+            'display:inline-block;margin-left:4px;padding:1px 3px;border:0;' +
+            'border-radius:3px;background:#2d6cdf;color:#fff;font-size:9px;' +
+            'line-height:1.2;vertical-align:middle;cursor:pointer;';
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            showVinComparables(vin);
+        });
+        return button;
+    }
+
+    async function showVinComparables(vin) {
+        const popup = window.open('', '_blank');
+        if (!popup) {
+            alert('Could not open comparables. Allow pop-ups and try again.');
+            return;
+        }
+        popup.document.title = 'Vehicle comparables';
+        popup.document.body.textContent = `Decoding VIN ${vin} with NHTSA...`;
+        try {
+            const response = await fetch(
+                `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${encodeURIComponent(vin)}?format=json`
+            );
+            if (!response.ok) throw new Error(`VIN decoder returned HTTP ${response.status}.`);
+            const result = await response.json();
+            if (!Array.isArray(result.Results)) throw new Error('Invalid VIN decoder response.');
+            const field = name => result.Results.find(row => row.Variable === name)?.Value || '';
+            const doc = popup.document;
+            const form = doc.createElement('form');
+            form.style.cssText = 'font:14px Arial,sans-serif;max-width:500px;display:grid;gap:8px;';
+            const heading = doc.createElement('h2');
+            heading.textContent = `AutoTrader comparables: ${vin}`;
+            form.appendChild(heading);
+            const warning = doc.createElement('p');
+            warning.textContent =
+                'Confirm decoded details. Trim and drivetrain must be selected on AutoTrader.';
+            form.appendChild(warning);
+            const inputs = {};
+            for (const [key, label, value, type] of [
+                ['make', 'AutoTrader make', field('Make'), 'text'],
+                ['model', 'AutoTrader model', field('Model'), 'text'],
+                ['yearFrom', 'Year from', field('Model Year'), 'number'],
+                ['yearTo', 'Year to', field('Model Year'), 'number'],
+                ['kmFrom', 'Minimum kilometres', '', 'number'],
+                ['kmTo', 'Maximum kilometres', '', 'number'],
+                ['distance', 'Distance from Ottawa (km)', '250', 'number']
+            ]) {
+                const wrapper = doc.createElement('label');
+                wrapper.textContent = `${label}: `;
+                const input = doc.createElement('input');
+                input.type = type;
+                input.value = value;
+                input.required = ['make', 'model', 'yearFrom', 'yearTo', 'distance'].includes(key);
+                if (type === 'number') input.min = key.startsWith('year') ? '1900' : '0';
+                wrapper.appendChild(input);
+                form.appendChild(wrapper);
+                inputs[key] = input;
+            }
+            const submit = doc.createElement('button');
+            submit.type = 'submit';
+            submit.textContent = 'Search AutoTrader';
+            form.appendChild(submit);
+            form.addEventListener('submit', event => {
+                event.preventDefault();
+                const yearFrom = Number(inputs.yearFrom.value);
+                const yearTo = Number(inputs.yearTo.value);
+                const kmFrom = inputs.kmFrom.value;
+                const kmTo = inputs.kmTo.value;
+                if (!inputs.make.value.trim() || !inputs.model.value.trim() ||
+                    yearFrom > yearTo || (kmFrom && kmTo && Number(kmFrom) > Number(kmTo))) {
+                    popup.alert('Enter a make and model and valid year and kilometre ranges.');
+                    return;
+                }
+                const segment = value => encodeURIComponent(value.trim().toLowerCase().replace(/\s+/g, '-'));
+                const url = new URL(
+                    `https://www.autotrader.ca/cars/${segment(inputs.make.value)}/${segment(inputs.model.value)}/reg_on/cit_ottawa`
+                );
+                url.search = new URLSearchParams({
+                    offer: 'U', cy: 'CA', modelyearfrom: String(yearFrom),
+                    modelyearto: String(yearTo), zip: 'Ottawa',
+                    zipr: inputs.distance.value, lat: '45.41117', lon: '-75.69812'
+                }).toString();
+                if (kmFrom) url.searchParams.set('kmfrom', kmFrom);
+                if (kmTo) url.searchParams.set('kmto', kmTo);
+                popup.location.href = url.href;
+            });
+            doc.body.replaceChildren(form);
+        } catch (error) {
+            console.error('Could not decode VIN for comparables:', error);
+            if (!popup.closed) popup.document.body.textContent = `VIN decode failed: ${error.message}`;
+        }
     }
 
     function addVinLinks(textNodes) {
@@ -256,7 +357,7 @@
                 ? getFollowingVinControls(position.node)
                 : [];
             const existingMarkers = new Set(existing.map(control =>
-                ['globalVinLink', 'globalVinSearch', 'globalVinCopy']
+                ['globalVinLink', 'globalVinSearch', 'globalVinCopy', 'globalVinComps']
                     .find(key => control.dataset[key] === 'true')
             ));
             const range = document.createRange();
@@ -281,7 +382,13 @@
                 range.collapse(true);
             }
             if (!existingMarkers.has('globalVinCopy')) {
-                range.insertNode(createVinCopyButton(vin));
+                const copyButton = createVinCopyButton(vin);
+                range.insertNode(copyButton);
+                range.setStartAfter(copyButton);
+                range.collapse(true);
+            }
+            if (!existingMarkers.has('globalVinComps')) {
+                range.insertNode(createVinComparablesButton(vin));
             }
         }
     }
