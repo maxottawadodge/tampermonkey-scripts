@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         !DEV global phone links
 // @namespace    http://tampermonkey.net/
-// @version      1.10
+// @version      1.11
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js
 // @description  Add click-to-call links and inline VIN actions
@@ -239,12 +239,29 @@
         button.addEventListener('click', event => {
             event.preventDefault();
             event.stopPropagation();
-            showVinComparables(button.dataset.vin);
+            let mileage = '';
+            if (button.dataset.globalCardComps === 'true') {
+                mileage = getDealershipMileage(button.closest('.carBoxOuter'));
+            } else if (button.dataset.globalDetailComps === 'true') {
+                const mileageElement = [...document.querySelectorAll('.s-km')]
+                    .find(element => !element.closest('.carBoxOuter'));
+                mileage = parseMileage(mileageElement?.textContent);
+            }
+            showVinComparables(button.dataset.vin, mileage);
         });
         return button;
     }
 
-    async function showVinComparables(vin) {
+    function parseMileage(text) {
+        const match = String(text || '').trim().match(/^([\d,\s]+)\s*KM\b/i);
+        return match ? match[1].replace(/\D/g, '') : '';
+    }
+
+    function getDealershipMileage(card) {
+        return parseMileage(card?.querySelector('.s-km')?.textContent);
+    }
+
+    async function showVinComparables(vin, mileage = '') {
         const popup = window.open('', '_blank');
         if (!popup) {
             alert('Could not open comparables. Allow pop-ups and try again.');
@@ -274,20 +291,38 @@
             for (const [key, label, value, type] of [
                 ['make', 'AutoTrader make', field('Make'), 'text'],
                 ['model', 'AutoTrader model', field('Model'), 'text'],
-                ['yearFrom', 'Year from', field('Model Year'), 'number'],
-                ['yearTo', 'Year to', field('Model Year'), 'number'],
-                ['kmFrom', 'Minimum kilometres', '', 'number'],
-                ['kmTo', 'Maximum kilometres', '', 'number'],
+                ['year', 'Vehicle year', field('Model Year'), 'number'],
+                ['yearRange', 'Year +/-', '2', 'range'],
+                ['mileage', 'Vehicle kilometres (optional)', mileage, 'number'],
+                ['kmRange', 'Kilometres +/-', '25000', 'range'],
                 ['distance', 'Distance from Ottawa (km)', '250', 'number']
             ]) {
                 const wrapper = doc.createElement('label');
                 wrapper.textContent = `${label}: `;
                 const input = doc.createElement('input');
                 input.type = type;
+                if (type === 'range') {
+                    input.min = '0';
+                    input.max = key === 'yearRange' ? '10' : '300000';
+                    input.step = key === 'yearRange' ? '1' : '5000';
+                }
                 input.value = value;
-                input.required = ['make', 'model', 'yearFrom', 'yearTo', 'distance'].includes(key);
-                if (type === 'number') input.min = key.startsWith('year') ? '1900' : '0';
+                input.required = ['make', 'model', 'year', 'distance'].includes(key);
+                if (type === 'number') {
+                    input.min = key === 'year' ? '1900' : '0';
+                    input.step = '1';
+                }
                 wrapper.appendChild(input);
+                if (type === 'range') {
+                    const output = doc.createElement('output');
+                    const updateOutput = () => {
+                        output.textContent = ` ${Number(input.value).toLocaleString('en-CA')}` +
+                            (key === 'yearRange' ? ' years' : ' km');
+                    };
+                    input.addEventListener('input', updateOutput);
+                    updateOutput();
+                    wrapper.appendChild(output);
+                }
                 form.appendChild(wrapper);
                 inputs[key] = input;
             }
@@ -297,15 +332,14 @@
             form.appendChild(submit);
             form.addEventListener('submit', event => {
                 event.preventDefault();
-                const yearFrom = Number(inputs.yearFrom.value);
-                const yearTo = Number(inputs.yearTo.value);
-                const kmFrom = inputs.kmFrom.value;
-                const kmTo = inputs.kmTo.value;
-                if (!inputs.make.value.trim() || !inputs.model.value.trim() ||
-                    yearFrom > yearTo || (kmFrom && kmTo && Number(kmFrom) > Number(kmTo))) {
-                    popup.alert('Enter a make and model and valid year and kilometre ranges.');
+                if (!form.reportValidity() || !inputs.make.value.trim() || !inputs.model.value.trim()) {
+                    popup.alert('Enter a make, model, and valid vehicle details.');
                     return;
                 }
+                const year = Number(inputs.year.value);
+                const yearRange = Number(inputs.yearRange.value);
+                const yearFrom = Math.max(1900, year - yearRange);
+                const yearTo = year + yearRange;
                 const segment = value => encodeURIComponent(value.trim().toLowerCase().replace(/\s+/g, '-'));
                 const url = new URL(
                     `https://www.autotrader.ca/cars/${segment(inputs.make.value)}/${segment(inputs.model.value)}/reg_on/cit_ottawa`
@@ -315,8 +349,12 @@
                     modelyearto: String(yearTo), zip: 'Ottawa',
                     zipr: inputs.distance.value, lat: '45.41117', lon: '-75.69812'
                 }).toString();
-                if (kmFrom) url.searchParams.set('kmfrom', kmFrom);
-                if (kmTo) url.searchParams.set('kmto', kmTo);
+                if (inputs.mileage.value !== '') {
+                    const km = Number(inputs.mileage.value);
+                    const kmRange = Number(inputs.kmRange.value);
+                    url.searchParams.set('kmfrom', String(Math.max(0, km - kmRange)));
+                    url.searchParams.set('kmto', String(km + kmRange));
+                }
                 popup.location.href = url.href;
             });
             doc.body.replaceChildren(form);

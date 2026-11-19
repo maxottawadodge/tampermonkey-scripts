@@ -15,7 +15,7 @@ This repository contains production and development Tampermonkey userscripts.
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js" target="_blank" rel="noopener noreferrer">!DEV DemandHub tools (v1.17)</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js" target="_blank" rel="noopener noreferrer">!DEV DealerSocket tools (v4.9)</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-auto-refresh.user.js" target="_blank" rel="noopener noreferrer">!DEV DealerSocket auto refresh (v1.3)</a>
-- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js" target="_blank" rel="noopener noreferrer">!DEV Global phone links (v1.10)</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js" target="_blank" rel="noopener noreferrer">!DEV Global phone links (v1.11)</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-kijiji-autofill.user.js" target="_blank" rel="noopener noreferrer">!DEV Kijiji Autofill (v1.2)</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-marketplace-autofill.user.js" target="_blank" rel="noopener noreferrer">!DEV Marketplace Autofill (v1.19)</a>
 - <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-used-car-scraper.user.js" target="_blank" rel="noopener noreferrer">!DEV Used car scraper (v1.54)</a>
@@ -23,6 +23,11 @@ This repository contains production and development Tampermonkey userscripts.
 Development scripts have `!DEV` names and separate update URLs so they can be
 installed alongside production scripts. Disable one environment when testing
 changes that would otherwise run on the same page.
+
+The development global script's Compare button uses the vehicle year and, when
+available on the dealership page, its kilometres. Adjust the year and kilometre
+sliders to widen or narrow the search around those values. If kilometres are
+unavailable, enter them manually or leave the field blank for no kilometre filter.
 
 ## Scheduled price tracking
 
