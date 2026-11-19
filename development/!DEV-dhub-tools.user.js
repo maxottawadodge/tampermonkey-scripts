@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.15
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.15
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.15
+// @version      1.16
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.16
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dhub-tools.user.js?v=1.16
 // @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
 // @match        https://app.demandhub.co/*
 // @grant        none
@@ -173,7 +173,9 @@
         processedPhoneTextNodes.add(phoneText);
         fragment.appendChild(phoneText);
         fragment.appendChild(createPhoneLink(phone));
-        fragment.appendChild(createSearchLink(phone));
+        if (parent.closest('.mb-thread-header')) {
+            fragment.appendChild(createSearchLink(phone));
+        }
         fragment.appendChild(createCopyButton(phone));
 
         if (end < text.length) fragment.appendChild(document.createTextNode(text.slice(end)));
