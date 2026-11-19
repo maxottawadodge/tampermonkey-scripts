@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      4.6
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.6
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.6
+// @version      4.7
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.7
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.7
 // @description  Auto-populate DealerSocket searches and add copy/contact tools
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*
@@ -510,15 +510,22 @@
     }
 
     function addEmailCopyButtons(textNodes) {
-        if (!textNodes.length) return;
+        if (!textNodes.some(node => (node.nodeValue || '').includes('@'))) return;
         const positions = [];
         let text = '';
+        let previousNode;
         for (const node of textNodes) {
+            if (previousNode) {
+                const gap = node.ownerDocument.createRange();
+                gap.setStartAfter(previousNode);
+                gap.setEndBefore(node);
+                if (gap.cloneContents().querySelector('br')) text += '\n';
+            }
             const start = text.length;
             text += node.nodeValue || '';
             positions.push({ node, start, end: text.length });
+            previousNode = node;
         }
-        if (!text.includes('@')) return;
 
         emailPattern.lastIndex = 0;
         let match;
