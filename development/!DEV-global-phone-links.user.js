@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV global phone links
 // @namespace    http://tampermonkey.net/
-// @version      1.8
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.8
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.8
+// @version      1.9
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.9
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-global-phone-links.user.js?v=1.9
 // @description  Add click-to-call links and inline VIN actions
 // @match        *://*/*
 // @exclude      *://dealersocket.com/*
@@ -510,15 +510,21 @@
             existing?.remove();
             return;
         }
-        if (existing && existing.parentElement === linkArea) {
+        const toolbar = linkArea.querySelector('.vin-tools-row') || linkArea;
+        if (existing) {
             if (existing.dataset.vin !== vin) existing.dataset.vin = vin;
             existing.title = `Find comparable listings for ${vin}`;
+            if (existing.parentElement !== toolbar) toolbar.appendChild(existing);
             return;
         }
-        existing?.remove();
         const button = createVinComparablesButton(vin);
         button.dataset.globalCardComps = 'true';
-        linkArea.appendChild(button);
+        button.style.cssText =
+            'background:#c64545;color:#fff;border:0;border-radius:4px;' +
+            'padding:1px 3px;min-height:24px;font-family:Verdana,sans-serif;' +
+            'line-height:1;font-size:8pt;font-weight:normal;text-transform:uppercase;' +
+            'cursor:pointer;white-space:nowrap;';
+        toolbar.appendChild(button);
     }
 
     function getDealershipDetailVin() {
@@ -555,8 +561,9 @@
             button.textContent = 'Compare';
             button.style.cssText =
                 'position:fixed;top:240px;right:15px;z-index:999999;' +
-                'background:#2d6cdf;color:white;border:0;border-radius:5px;' +
-                'padding:4px 8px;font-size:12px;font-weight:600;cursor:pointer;opacity:.85;';
+                'background:#c64545;color:white;border:0;border-radius:5px;' +
+                'padding:1px 3px;font-family:Verdana,sans-serif;font-size:8pt;' +
+                'font-weight:normal;text-transform:uppercase;cursor:pointer;opacity:.85;';
             document.body.appendChild(button);
         }
         if (button.dataset.vin !== vin) button.dataset.vin = vin;

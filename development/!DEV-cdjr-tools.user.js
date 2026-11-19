@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.21
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.21
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.21
+// @version      5.22
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.22
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-cdjr-tools.user.js?v=5.22
 // @description  Inventory search, VIN decode, window sticker, and copy tools
 // @match        *://*.ottawachryslerjeepdodge.com/*
 // @grant        none
@@ -520,8 +520,9 @@ ${rows.map(row => `
             min-height:24px;
             font-family: verdana;
             line-height:1;
-            font-size:8px;
-            font-weight:600;
+            font-size:8pt;
+            font-weight:normal;
+            text-transform:uppercase;
             cursor:pointer;
             white-space:nowrap;
         `;
@@ -658,9 +659,11 @@ ${rows.map(row => `
             color:white;
             border:none;
             border-radius:5px;
-            padding:4px 8px;
-            font-size:12px;
-            font-weight:600;
+            padding:1px 3px;
+            font-family:Verdana,sans-serif;
+            font-size:8pt;
+            font-weight:normal;
+            text-transform:uppercase;
             cursor:pointer;
             opacity:.85;
         `;
