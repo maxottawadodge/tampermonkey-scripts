@@ -1,9 +1,9 @@
 // ==UserScript==
 // @name         !DEV dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      4.7
-// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.7
-// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.7
+// @version      4.8
+// @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.8
+// @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/development/!DEV-dsocket-tools.user.js?v=4.8
 // @description  Auto-populate DealerSocket searches and add copy/contact tools
 // @match        https://dealersocket.com/*
 // @match        https://*.dealersocket.com/*
@@ -239,6 +239,7 @@
 
         if (control.dataset.dealerSocketVinLink === 'true' ||
             control.dataset.dealerSocketVinSearch === 'true' ||
+            control.dataset.dealerSocketStockSearch === 'true' ||
             control.dataset.dealerSocketPhoneLink === 'true' ||
             control.dataset.dealerSocketMapsLink === 'true') {
             event.stopImmediatePropagation();
@@ -273,6 +274,12 @@
         return controls;
     }
 
+    function inventorySearchUrl(doc, term) {
+        const filter = [{ tsearch: [{ n: 'fieldsearch', v: term.toLowerCase(), s: 1 }] }];
+        return 'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
+            'a9b123q0-10x0-0-0+' + doc.defaultView.btoa(JSON.stringify(filter));
+    }
+
     function createVinLink(doc, vin, { sticker = false } = {}) {
         const link = doc.createElement('a');
         if (sticker) {
@@ -282,17 +289,7 @@
             link.title = `Open window sticker for ${vin}`;
             link.dataset.dealerSocketVinLink = 'true';
         } else {
-            const filter = [{
-                tsearch: [{
-                    n: 'fieldsearch',
-                    v: vin.toLowerCase(),
-                    s: 1
-                }]
-            }];
-            const encoded = doc.defaultView.btoa(JSON.stringify(filter));
-            link.href =
-                'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
-                'a9b123q0-10x0-0-0+' + encoded;
+            link.href = inventorySearchUrl(doc, vin);
             link.setAttribute('aria-label', `Search inventory for VIN ${vin}`);
             link.title = `Search inventory for VIN ${vin}`;
             link.dataset.dealerSocketVinSearch = 'true';
@@ -768,18 +765,39 @@
         for (const stockElement of candidates) {
             if (stockElement.closest(ignoredPhoneElements)) continue;
             const clone = stockElement.cloneNode(true);
-            clone.querySelectorAll('.item-heading, [data-dealer-socket-stock-copy]')
+            clone.querySelectorAll(
+                '.item-heading, [data-dealer-socket-stock-copy], [data-dealer-socket-stock-search]'
+            )
                 .forEach(element => element.remove());
             const stock = clone.textContent.trim();
             const button = stockElement.querySelector('[data-dealer-socket-stock-copy="true"]');
+            let search = stockElement.querySelector('[data-dealer-socket-stock-search="true"]');
             if (!stock) {
                 button?.remove();
-            } else if (button) {
-                button.dataset.copyValue = stock;
+                search?.remove();
             } else {
-                stockElement.appendChild(createCopyButton(
-                    stockElement.ownerDocument, stock, 'stock number', 'dealerSocketStockCopy'
-                ));
+                if (button) {
+                    button.dataset.copyValue = stock;
+                } else {
+                    stockElement.appendChild(createCopyButton(
+                        stockElement.ownerDocument, stock, 'stock number', 'dealerSocketStockCopy'
+                    ));
+                }
+                if (!search) {
+                    search = stockElement.ownerDocument.createElement('a');
+                    search.dataset.dealerSocketStockSearch = 'true';
+                    search.target = '_blank';
+                    search.rel = 'noopener noreferrer';
+                    search.textContent = 'CDJR';
+                    search.style.cssText =
+                        'display:inline-block;margin-left:4px;padding:1px 3px;' +
+                        'background:#2d6cdf;color:#fff;border-radius:3px;font-size:9px;' +
+                        'line-height:1.2;text-decoration:none;vertical-align:middle;';
+                    stockElement.appendChild(search);
+                }
+                search.href = inventorySearchUrl(stockElement.ownerDocument, stock);
+                search.title = `Search inventory for stock ${stock}`;
+                search.setAttribute('aria-label', `Search inventory for stock ${stock}`);
             }
         }
     }
