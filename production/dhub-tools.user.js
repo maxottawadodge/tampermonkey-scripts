@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dhub tools
 // @namespace    http://tampermonkey.net/
-// @version      1.15
+// @version      1.17
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js
 // @description  Add copy-name, DealerSocket search, and click-to-call tools in DemandHub
@@ -17,6 +17,9 @@
     const searchColor = '#287397';
     const nameElementId = 'mb-edit-contact-name-text';
     const processedPhoneTextNodes = new WeakSet();
+    const skippedPhoneElements =
+        'a, button, input, select, textarea, script, style, noscript, option, iframe, ' +
+        '[contenteditable]:not([contenteditable="false"]), [role="textbox"]';
 
     function createSearchLink(phone) {
         const link = document.createElement('a');
@@ -153,7 +156,7 @@
         if (processedPhoneTextNodes.has(textNode)) return;
 
         const parent = textNode.parentElement;
-        if (!parent || parent.closest('a, button, script, style, textarea')) return;
+        if (!parent || parent.isContentEditable || parent.closest(skippedPhoneElements)) return;
 
         const text = textNode.nodeValue || '';
         const match = text.match(phoneRegex);
@@ -170,7 +173,9 @@
         processedPhoneTextNodes.add(phoneText);
         fragment.appendChild(phoneText);
         fragment.appendChild(createPhoneLink(phone));
-        fragment.appendChild(createSearchLink(phone));
+        if (parent.closest('.mb-thread-header')) {
+            fragment.appendChild(createSearchLink(phone));
+        }
         fragment.appendChild(createCopyButton(phone));
 
         if (end < text.length) fragment.appendChild(document.createTextNode(text.slice(end)));

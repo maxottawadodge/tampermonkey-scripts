@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         global phone links
 // @namespace    http://tampermonkey.net/
-// @version      1.6
+// @version      1.11
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js
 // @description  Add click-to-call links and inline VIN actions
@@ -9,8 +9,6 @@
 // @exclude      *://dealersocket.com/*
 // @exclude      *://*.dealersocket.com/*
 // @exclude      *://app.demandhub.co/*
-// @exclude      *://ottawachryslerjeepdodge.com/*
-// @exclude      *://*.ottawachryslerjeepdodge.com/*
 // @run-at       document-start
 // @grant        none
 // ==/UserScript==
@@ -58,7 +56,7 @@
     }
 
     function isSkipped(element) {
-        return Boolean(element.closest(skippedElements));
+        return element.isContentEditable || Boolean(element.closest(skippedElements));
     }
 
     function createPhoneLink(phone) {
@@ -219,11 +217,151 @@
         while (next && next.nodeType === Node.ELEMENT_NODE &&
             (next.dataset.globalVinLink === 'true' ||
                 next.dataset.globalVinSearch === 'true' ||
-                next.dataset.globalVinCopy === 'true')) {
+                next.dataset.globalVinCopy === 'true' ||
+                next.dataset.globalVinComps === 'true')) {
             controls.push(next);
             next = next.nextSibling;
         }
         return controls;
+    }
+
+    function createVinComparablesButton(vin) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.dataset.globalVinComps = 'true';
+        button.dataset.vin = vin;
+        button.textContent = 'Compare';
+        button.title = `Find comparable listings for ${vin}`;
+        button.style.cssText =
+            'display:inline-block;margin-left:4px;padding:1px 3px;border:0;' +
+            'border-radius:3px;background:#2d6cdf;color:#fff;font-size:9px;' +
+            'line-height:1.2;vertical-align:middle;cursor:pointer;';
+        button.addEventListener('click', event => {
+            event.preventDefault();
+            event.stopPropagation();
+            let mileage = '';
+            if (button.dataset.globalCardComps === 'true') {
+                mileage = getDealershipMileage(button.closest('.carBoxOuter'));
+            } else if (button.dataset.globalDetailComps === 'true') {
+                const mileageElement = [...document.querySelectorAll('.s-km')]
+                    .find(element => !element.closest('.carBoxOuter'));
+                mileage = parseMileage(mileageElement?.textContent);
+            }
+            showVinComparables(button.dataset.vin, mileage);
+        });
+        return button;
+    }
+
+    function parseMileage(text) {
+        const match = String(text || '').trim().match(/^([\d,\s]+)\s*KM\b/i);
+        return match ? match[1].replace(/\D/g, '') : '';
+    }
+
+    function getDealershipMileage(card) {
+        return parseMileage(card?.querySelector('.s-km')?.textContent);
+    }
+
+    async function showVinComparables(vin, mileage = '') {
+        const popup = window.open('', '_blank');
+        if (!popup) {
+            alert('Could not open comparables. Allow pop-ups and try again.');
+            return;
+        }
+        popup.document.title = 'Vehicle comparables';
+        popup.document.body.textContent = `Decoding VIN ${vin} with NHTSA...`;
+        try {
+            const response = await fetch(
+                `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${encodeURIComponent(vin)}?format=json`
+            );
+            if (!response.ok) throw new Error(`VIN decoder returned HTTP ${response.status}.`);
+            const result = await response.json();
+            if (!Array.isArray(result.Results)) throw new Error('Invalid VIN decoder response.');
+            const field = name => result.Results.find(row => row.Variable === name)?.Value || '';
+            const doc = popup.document;
+            const form = doc.createElement('form');
+            form.style.cssText = 'font:14px Arial,sans-serif;max-width:500px;display:grid;gap:8px;';
+            const heading = doc.createElement('h2');
+            heading.textContent = `AutoTrader comparables: ${vin}`;
+            form.appendChild(heading);
+            const warning = doc.createElement('p');
+            warning.textContent =
+                'Confirm decoded details. Trim and drivetrain must be selected on AutoTrader.';
+            form.appendChild(warning);
+            const inputs = {};
+            for (const [key, label, value, type] of [
+                ['make', 'AutoTrader make', field('Make'), 'text'],
+                ['model', 'AutoTrader model', field('Model'), 'text'],
+                ['year', 'Vehicle year', field('Model Year'), 'number'],
+                ['yearRange', 'Year +/-', '2', 'range'],
+                ['mileage', 'Vehicle kilometres (optional)', mileage, 'number'],
+                ['kmRange', 'Kilometres +/-', '25000', 'range'],
+                ['distance', 'Distance from Ottawa (km)', '250', 'number']
+            ]) {
+                const wrapper = doc.createElement('label');
+                wrapper.textContent = `${label}: `;
+                const input = doc.createElement('input');
+                input.type = type;
+                if (type === 'range') {
+                    input.min = '0';
+                    input.max = key === 'yearRange' ? '10' : '300000';
+                    input.step = key === 'yearRange' ? '1' : '5000';
+                }
+                input.value = value;
+                input.required = ['make', 'model', 'year', 'distance'].includes(key);
+                if (type === 'number') {
+                    input.min = key === 'year' ? '1900' : '0';
+                    input.step = '1';
+                }
+                wrapper.appendChild(input);
+                if (type === 'range') {
+                    const output = doc.createElement('output');
+                    const updateOutput = () => {
+                        output.textContent = ` ${Number(input.value).toLocaleString('en-CA')}` +
+                            (key === 'yearRange' ? ' years' : ' km');
+                    };
+                    input.addEventListener('input', updateOutput);
+                    updateOutput();
+                    wrapper.appendChild(output);
+                }
+                form.appendChild(wrapper);
+                inputs[key] = input;
+            }
+            const submit = doc.createElement('button');
+            submit.type = 'submit';
+            submit.textContent = 'Search AutoTrader';
+            form.appendChild(submit);
+            form.addEventListener('submit', event => {
+                event.preventDefault();
+                if (!form.reportValidity() || !inputs.make.value.trim() || !inputs.model.value.trim()) {
+                    popup.alert('Enter a make, model, and valid vehicle details.');
+                    return;
+                }
+                const year = Number(inputs.year.value);
+                const yearRange = Number(inputs.yearRange.value);
+                const yearFrom = Math.max(1900, year - yearRange);
+                const yearTo = year + yearRange;
+                const segment = value => encodeURIComponent(value.trim().toLowerCase().replace(/\s+/g, '-'));
+                const url = new URL(
+                    `https://www.autotrader.ca/cars/${segment(inputs.make.value)}/${segment(inputs.model.value)}/reg_on/cit_ottawa`
+                );
+                url.search = new URLSearchParams({
+                    offer: 'U', cy: 'CA', modelyearfrom: String(yearFrom),
+                    modelyearto: String(yearTo), zip: 'Ottawa',
+                    zipr: inputs.distance.value, lat: '45.41117', lon: '-75.69812'
+                }).toString();
+                if (inputs.mileage.value !== '') {
+                    const km = Number(inputs.mileage.value);
+                    const kmRange = Number(inputs.kmRange.value);
+                    url.searchParams.set('kmfrom', String(Math.max(0, km - kmRange)));
+                    url.searchParams.set('kmto', String(km + kmRange));
+                }
+                popup.location.href = url.href;
+            });
+            doc.body.replaceChildren(form);
+        } catch (error) {
+            console.error('Could not decode VIN for comparables:', error);
+            if (!popup.closed) popup.document.body.textContent = `VIN decode failed: ${error.message}`;
+        }
     }
 
     function addVinLinks(textNodes) {
@@ -256,7 +394,7 @@
                 ? getFollowingVinControls(position.node)
                 : [];
             const existingMarkers = new Set(existing.map(control =>
-                ['globalVinLink', 'globalVinSearch', 'globalVinCopy']
+                ['globalVinLink', 'globalVinSearch', 'globalVinCopy', 'globalVinComps']
                     .find(key => control.dataset[key] === 'true')
             ));
             const range = document.createRange();
@@ -281,7 +419,13 @@
                 range.collapse(true);
             }
             if (!existingMarkers.has('globalVinCopy')) {
-                range.insertNode(createVinCopyButton(vin));
+                const copyButton = createVinCopyButton(vin);
+                range.insertNode(copyButton);
+                range.setStartAfter(copyButton);
+                range.collapse(true);
+            }
+            if (!existingMarkers.has('globalVinComps')) {
+                range.insertNode(createVinComparablesButton(vin));
             }
         }
     }
@@ -391,9 +535,112 @@
         });
     }
 
+    function dealershipVin(value) {
+        const vin = String(value || '').trim().toUpperCase();
+        return /^[A-HJ-NPR-Z0-9]{17}$/.test(vin) ? vin : '';
+    }
+
+    function updateDealershipCard(card) {
+        const vin = dealershipVin(card.querySelector('input[data-vin]')?.dataset.vin);
+        const linkArea = card.querySelector('.group-lc.carLinks, .carLinks');
+        const existing = card.querySelector('[data-global-card-comps="true"]');
+        if (!vin || !linkArea) {
+            existing?.remove();
+            return;
+        }
+        const toolbar = linkArea.querySelector('.vin-tools-row') || linkArea;
+        if (existing) {
+            if (existing.dataset.vin !== vin) existing.dataset.vin = vin;
+            existing.title = `Find comparable listings for ${vin}`;
+            if (existing.parentElement !== toolbar) toolbar.appendChild(existing);
+            return;
+        }
+        const button = createVinComparablesButton(vin);
+        button.dataset.globalCardComps = 'true';
+        button.style.cssText =
+            'background:#c64545;color:#fff;border:0;border-radius:4px;' +
+            'padding:1px 3px;min-height:24px;font-family:Verdana,sans-serif;' +
+            'line-height:1;font-size:8pt;font-weight:normal;text-transform:uppercase;' +
+            'cursor:pointer;white-space:nowrap;';
+        toolbar.appendChild(button);
+    }
+
+    function getDealershipDetailVin() {
+        const input = document.querySelector('input[data-vin]:not(.carBoxOuter input)');
+        const inputVin = dealershipVin(input?.dataset.vin);
+        if (inputVin) return inputVin;
+
+        for (const script of document.querySelectorAll('script[type="application/ld+json"]')) {
+            try {
+                const data = JSON.parse(script.textContent);
+                for (const item of Array.isArray(data) ? data : [data]) {
+                    const vin = dealershipVin(item?.vehicleIdentificationNumber);
+                    if (vin) return vin;
+                }
+            } catch (error) {
+                console.warn('Could not parse dealership vehicle data:', error);
+            }
+        }
+        const match = (document.body.textContent || '').match(/\b[A-HJ-NPR-Z0-9]{17}\b/);
+        return match ? match[0] : '';
+    }
+
+    function updateDealershipDetail() {
+        if (!/\/(?:new|used|demo|occasion)\/[^?#]*id\d+\.html$/i.test(location.pathname)) return;
+        const vin = getDealershipDetailVin();
+        let button = document.querySelector('[data-global-detail-comps="true"]');
+        if (!vin) {
+            button?.remove();
+            return;
+        }
+        if (!button) {
+            button = createVinComparablesButton(vin);
+            button.dataset.globalDetailComps = 'true';
+            button.textContent = 'Compare';
+            button.style.cssText =
+                'position:fixed;top:240px;right:15px;z-index:999999;' +
+                'background:#c64545;color:white;border:0;border-radius:5px;' +
+                'padding:1px 3px;font-family:Verdana,sans-serif;font-size:8pt;' +
+                'font-weight:normal;text-transform:uppercase;cursor:pointer;opacity:.85;';
+            document.body.appendChild(button);
+        }
+        if (button.dataset.vin !== vin) button.dataset.vin = vin;
+        button.title = `Find comparable listings for ${vin}`;
+    }
+
+    function startDealershipComparables() {
+        document.querySelectorAll('.carBoxOuter').forEach(updateDealershipCard);
+        updateDealershipDetail();
+        const observer = new MutationObserver(mutations => {
+            const cards = new Set();
+            for (const mutation of mutations) {
+                const element = mutation.target.nodeType === Node.ELEMENT_NODE
+                    ? mutation.target : mutation.target.parentElement;
+                const card = element?.closest('.carBoxOuter');
+                if (card) cards.add(card);
+                for (const node of mutation.addedNodes) {
+                    if (node.nodeType !== Node.ELEMENT_NODE) continue;
+                    if (node.matches('.carBoxOuter')) cards.add(node);
+                    node.querySelectorAll('.carBoxOuter').forEach(item => cards.add(item));
+                }
+            }
+            cards.forEach(updateDealershipCard);
+            updateDealershipDetail();
+        });
+        observer.observe(document.body, {
+            childList: true,
+            characterData: true,
+            attributes: true,
+            attributeFilter: ['data-vin'],
+            subtree: true
+        });
+    }
+
+    const dealershipHost = /(?:^|\.)ottawachryslerjeepdodge\.com$/i.test(location.hostname);
+    const startForPage = dealershipHost ? startDealershipComparables : start;
     if (document.body) {
-        start();
+        startForPage();
     } else {
-        document.addEventListener('DOMContentLoaded', start, { once: true });
+        document.addEventListener('DOMContentLoaded', startForPage, { once: true });
     }
 })();

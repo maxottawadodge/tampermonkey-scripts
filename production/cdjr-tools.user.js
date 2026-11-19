@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         cdjr tools
 // @namespace    http://tampermonkey.net/
-// @version      5.21
+// @version      5.23
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js
 // @description  Inventory search, VIN decode, window sticker, and copy tools
@@ -506,18 +506,23 @@ ${rows.map(row => `
         const button = document.createElement('button');
 
         button.textContent = text;
+        if (text === 'VIN' || text === 'Stock') {
+            button.title = `Copy ${text}`;
+            button.setAttribute('aria-label', `Copy ${text}`);
+        }
 
         button.style.cssText = `
             background:${color};
             color:#fff;
             border:none;
             border-radius:4px;
-            padding:2px 4px;
-            min-height:30px;
+            padding:1px 3px;
+            min-height:24px;
             font-family: verdana;
             line-height:1;
-            font-size:8px;
-            font-weight:600;
+            font-size:8pt;
+            font-weight:normal;
+            text-transform:uppercase;
             cursor:pointer;
             white-space:nowrap;
         `;
@@ -600,7 +605,7 @@ ${rows.map(row => `
 
             toolbar.appendChild(
                 makeMiniButton(
-                    'CopyVIN',
+                    'VIN',
                     '#2f8f5b',
                     function () {
                         copyVIN(vin, this);
@@ -611,7 +616,7 @@ ${rows.map(row => `
             if (stockNumber) {
                 toolbar.appendChild(
                     makeMiniButton(
-                        'CopyStock',
+                        'Stock',
                         '#8a5a2b',
                         function () {
                             copyValue(stockNumber, this, 'stock number');
@@ -640,6 +645,10 @@ ${rows.map(row => `
         const button = document.createElement('button');
 
         button.textContent = text;
+        if (text === 'VIN' || text === 'Stock') {
+            button.title = `Copy ${text}`;
+            button.setAttribute('aria-label', `Copy ${text}`);
+        }
 
         button.style.cssText = `
             position:fixed;
@@ -650,9 +659,11 @@ ${rows.map(row => `
             color:white;
             border:none;
             border-radius:5px;
-            padding:6px 12px;
-            font-size:12px;
-            font-weight:600;
+            padding:1px 3px;
+            font-family:Verdana,sans-serif;
+            font-size:8pt;
+            font-weight:normal;
+            text-transform:uppercase;
             cursor:pointer;
             opacity:.85;
         `;
@@ -747,7 +758,7 @@ ${rows.map(row => `
 
     let copyBtn;
     copyBtn = createFloatingButton(
-        'Copy VIN',
+        'VIN',
         '#2f8f5b',
         top,
         () => copyVIN(vin, copyBtn)
@@ -756,7 +767,7 @@ ${rows.map(row => `
     if (stockNumber) {
         top += 35;
         createFloatingButton(
-            'Copy Stock',
+            'Stock',
             '#8a5a2b',
             top,
             function () {

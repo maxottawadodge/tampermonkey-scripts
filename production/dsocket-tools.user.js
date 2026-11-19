@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         dsocket tools
 // @namespace    http://tampermonkey.net/
-// @version      4.6
+// @version      4.9
 // @updateURL   https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @downloadURL https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js
 // @description  Auto-populate DealerSocket searches and add copy/contact tools
@@ -203,6 +203,7 @@
             control.dataset.dealerSocketPhoneCopy === 'true' ||
             control.dataset.dealerSocketEmailCopy === 'true' ||
             control.dataset.dealerSocketNameCopy === 'true' ||
+            control.dataset.dealerSocketStockCopy === 'true' ||
             control.dataset.dealerSocketAddressCopy === 'true') {
             event.preventDefault();
             event.stopImmediatePropagation();
@@ -229,8 +230,16 @@
             return;
         }
 
+        if (control.dataset.dealerSocketVinDecode === 'true') {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+            decodeVin(doc, control.dataset.vin);
+            return;
+        }
+
         if (control.dataset.dealerSocketVinLink === 'true' ||
             control.dataset.dealerSocketVinSearch === 'true' ||
+            control.dataset.dealerSocketStockSearch === 'true' ||
             control.dataset.dealerSocketPhoneLink === 'true' ||
             control.dataset.dealerSocketMapsLink === 'true') {
             event.stopImmediatePropagation();
@@ -243,6 +252,7 @@
             'dealerSocketVinLink',
             'dealerSocketVinSearch',
             'dealerSocketVinCopy',
+            'dealerSocketVinDecode',
             'dealerSocketPhoneLink',
             'dealerSocketPhoneCopy',
             'dealerSocketEmailCopy',
@@ -264,6 +274,12 @@
         return controls;
     }
 
+    function inventorySearchUrl(doc, term) {
+        const filter = [{ tsearch: [{ n: 'fieldsearch', v: term.toLowerCase(), s: 1 }] }];
+        return 'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
+            'a9b123q0-10x0-0-0+' + doc.defaultView.btoa(JSON.stringify(filter));
+    }
+
     function createVinLink(doc, vin, { sticker = false } = {}) {
         const link = doc.createElement('a');
         if (sticker) {
@@ -273,17 +289,7 @@
             link.title = `Open window sticker for ${vin}`;
             link.dataset.dealerSocketVinLink = 'true';
         } else {
-            const filter = [{
-                tsearch: [{
-                    n: 'fieldsearch',
-                    v: vin.toLowerCase(),
-                    s: 1
-                }]
-            }];
-            const encoded = doc.defaultView.btoa(JSON.stringify(filter));
-            link.href =
-                'https://www.ottawachryslerjeepdodge.com/inventory.html?filterid=' +
-                'a9b123q0-10x0-0-0+' + encoded;
+            link.href = inventorySearchUrl(doc, vin);
             link.setAttribute('aria-label', `Search inventory for VIN ${vin}`);
             link.title = `Search inventory for VIN ${vin}`;
             link.dataset.dealerSocketVinSearch = 'true';
@@ -315,6 +321,61 @@
         return link;
     }
 
+    async function decodeVin(doc, vin) {
+        const popup = doc.defaultView.open('', '_blank');
+        if (!popup) {
+            doc.defaultView.alert('Could not open the VIN decoder. Allow pop-ups and try again.');
+            return;
+        }
+        popup.document.title = `VIN decode: ${vin}`;
+        popup.document.body.textContent = `Decoding VIN ${vin}...`;
+        try {
+            const response = await doc.defaultView.fetch(
+                `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVin/${encodeURIComponent(vin)}?format=json`
+            );
+            if (!response.ok) throw new Error(`VIN decoder returned HTTP ${response.status}.`);
+            const json = await response.json();
+            if (!Array.isArray(json.Results)) throw new Error('Invalid VIN decoder response.');
+            const rows = json.Results.filter(row =>
+                row.Variable && row.Value && row.Value !== '0' && row.Value !== 'Not Applicable'
+            );
+            if (!rows.length) throw new Error('No VIN details were returned.');
+            const heading = popup.document.createElement('h1');
+            heading.textContent = vin;
+            const table = popup.document.createElement('table');
+            table.style.cssText = 'border-collapse:collapse;font-family:Arial,sans-serif;';
+            for (const row of rows) {
+                const tr = table.insertRow();
+                for (const value of [row.Variable, row.Value]) {
+                    const cell = tr.insertCell();
+                    cell.textContent = value;
+                    cell.style.cssText = 'border:1px solid #ddd;padding:8px;';
+                }
+            }
+            popup.document.body.replaceChildren(heading, table);
+        } catch (error) {
+            console.error('DealerSocket: VIN decode failed', error);
+            if (!popup.closed) {
+                popup.document.body.textContent = `VIN decode failed: ${error.message}`;
+            }
+        }
+    }
+
+    function createVinDecodeButton(doc, vin) {
+        const button = doc.createElement('button');
+        button.type = 'button';
+        button.textContent = 'Decode';
+        button.title = `Decode VIN ${vin}`;
+        button.setAttribute('aria-label', `Decode VIN ${vin}`);
+        button.dataset.dealerSocketVinDecode = 'true';
+        button.dataset.vin = vin;
+        button.style.cssText =
+            'display:inline-block;margin-left:4px;padding:1px 3px;' +
+            'border:0;border-radius:3px;background:#2d6cdf;color:#fff;' +
+            'font-size:9px;line-height:1.2;vertical-align:middle;cursor:pointer;';
+        return button;
+    }
+
     function addVinLinks(textNodes) {
         const positions = [];
         let text = '';
@@ -338,7 +399,21 @@
             const position = positions.find(item => end <= item.end && end > item.start);
             if (!position) continue;
 
-            const existing = getFollowingControls(position.node);
+            let existing = getFollowingControls(position.node);
+            const previousVin = existing.find(control =>
+                control.dataset.dealerSocketVinDecode === 'true'
+            )?.dataset.vin || existing.find(control =>
+                control.dataset.dealerSocketVinCopy === 'true'
+            )?.dataset.copyValue;
+            if (previousVin && previousVin !== vin) {
+                existing.filter(control =>
+                    control.dataset.dealerSocketVinLink === 'true' ||
+                    control.dataset.dealerSocketVinSearch === 'true' ||
+                    control.dataset.dealerSocketVinCopy === 'true' ||
+                    control.dataset.dealerSocketVinDecode === 'true'
+                ).forEach(control => control.remove());
+                existing = getFollowingControls(position.node);
+            }
             const existingMarkers = new Set(existing.map(control =>
                 Object.keys(control.dataset).find(key => control.dataset[key] === 'true')
             ));
@@ -369,6 +444,11 @@
                     doc, vin, 'VIN', 'dealerSocketVinCopy'
                 );
                 range.insertNode(copyButton);
+                range.setStartAfter(copyButton);
+                range.collapse(true);
+            }
+            if (!existingMarkers.has('dealerSocketVinDecode')) {
+                range.insertNode(createVinDecodeButton(doc, vin));
             }
         }
     }
@@ -427,15 +507,22 @@
     }
 
     function addEmailCopyButtons(textNodes) {
-        if (!textNodes.length) return;
+        if (!textNodes.some(node => (node.nodeValue || '').includes('@'))) return;
         const positions = [];
         let text = '';
+        let previousNode;
         for (const node of textNodes) {
+            if (previousNode) {
+                const gap = node.ownerDocument.createRange();
+                gap.setStartAfter(previousNode);
+                gap.setEndBefore(node);
+                if (gap.cloneContents().querySelector('br')) text += '\n';
+            }
             const start = text.length;
             text += node.nodeValue || '';
             positions.push({ node, start, end: text.length });
+            previousNode = node;
         }
-        if (!text.includes('@')) return;
 
         emailPattern.lastIndex = 0;
         let match;
@@ -664,6 +751,57 @@
         candidates.forEach(addNameCopyButton);
     }
 
+    function processStockCopyNode(node) {
+        const selector = 'div[name="stockNumber"]';
+        const candidates = new Set();
+        const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+        if (element?.closest) {
+            const stockElement = element.closest(selector);
+            if (stockElement) candidates.add(stockElement);
+        }
+        if (node.querySelectorAll) {
+            node.querySelectorAll(selector).forEach(stockElement => candidates.add(stockElement));
+        }
+        for (const stockElement of candidates) {
+            if (stockElement.closest(ignoredPhoneElements)) continue;
+            const clone = stockElement.cloneNode(true);
+            clone.querySelectorAll(
+                '.item-heading, [data-dealer-socket-stock-copy], [data-dealer-socket-stock-search]'
+            )
+                .forEach(element => element.remove());
+            const stock = clone.textContent.trim();
+            const button = stockElement.querySelector('[data-dealer-socket-stock-copy="true"]');
+            let search = stockElement.querySelector('[data-dealer-socket-stock-search="true"]');
+            if (!stock) {
+                button?.remove();
+                search?.remove();
+            } else {
+                if (button) {
+                    button.dataset.copyValue = stock;
+                } else {
+                    stockElement.appendChild(createCopyButton(
+                        stockElement.ownerDocument, stock, 'stock number', 'dealerSocketStockCopy'
+                    ));
+                }
+                if (!search) {
+                    search = stockElement.ownerDocument.createElement('a');
+                    search.dataset.dealerSocketStockSearch = 'true';
+                    search.target = '_blank';
+                    search.rel = 'noopener noreferrer';
+                    search.textContent = 'CDJR';
+                    search.style.cssText =
+                        'display:inline-block;margin-left:4px;padding:1px 3px;' +
+                        'background:#2d6cdf;color:#fff;border-radius:3px;font-size:9px;' +
+                        'line-height:1.2;text-decoration:none;vertical-align:middle;';
+                    stockElement.appendChild(search);
+                }
+                search.href = inventorySearchUrl(stockElement.ownerDocument, stock);
+                search.title = `Search inventory for stock ${stock}`;
+                search.setAttribute('aria-label', `Search inventory for stock ${stock}`);
+            }
+        }
+    }
+
     function getBlockTextNodes(block) {
         const walker = block.ownerDocument.createTreeWalker(block, NodeFilter.SHOW_TEXT, {
             acceptNode(textNode) {
@@ -686,6 +824,7 @@
             node.nodeType !== Node.DOCUMENT_NODE &&
             node.nodeType !== Node.DOCUMENT_FRAGMENT_NODE) return;
         processNameCopyNode(node);
+        processStockCopyNode(node);
         if (node.nodeType === Node.ELEMENT_NODE &&
             node.closest(ignoredPhoneElements)) return;
 
@@ -737,6 +876,7 @@
                 if (mutation.type === 'characterData') {
                     processPhoneNode(mutation.target);
                 } else {
+                    processStockCopyNode(mutation.target);
                     for (const node of mutation.addedNodes) {
                         processPhoneNode(node);
                         if (node.nodeType === Node.ELEMENT_NODE) {

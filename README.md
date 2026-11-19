@@ -4,10 +4,10 @@ This repository contains production and development Tampermonkey userscripts.
 
 ## Install
 
-- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js" target="_blank" rel="noopener noreferrer">CDJR tools (v5.21)</a>
-- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js" target="_blank" rel="noopener noreferrer">DemandHub tools (v1.15)</a>
-- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js" target="_blank" rel="noopener noreferrer">DealerSocket tools (v4.6)</a>
-- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js" target="_blank" rel="noopener noreferrer">Global phone links (v1.6)</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/cdjr-tools.user.js" target="_blank" rel="noopener noreferrer">CDJR tools (v5.23)</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dhub-tools.user.js" target="_blank" rel="noopener noreferrer">DemandHub tools (v1.17)</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/dsocket-tools.user.js" target="_blank" rel="noopener noreferrer">DealerSocket tools (v4.9)</a>
+- <a href="https://raw.githubusercontent.com/maxottawadodge/tampermonkey-scripts/main/production/global-phone-links.user.js" target="_blank" rel="noopener noreferrer">Global phone links (v1.11)</a>
 
 ## Development
 
@@ -24,7 +24,7 @@ Development scripts have `!DEV` names and separate update URLs so they can be
 installed alongside production scripts. Disable one environment when testing
 changes that would otherwise run on the same page.
 
-The development global script's Compare button uses the vehicle year and, when
+The global script's Compare button uses the vehicle year and, when
 available on the dealership page, its kilometres. Adjust the year and kilometre
 sliders to widen or narrow the search around those values. If kilometres are
 unavailable, enter them manually or leave the field blank for no kilometre filter.
@@ -89,8 +89,8 @@ check.
 1. Make and test changes in `development/`. Increment the changed script's
    `@version` before committing so Tampermonkey recognizes the update.
 2. When ready, copy the approved changes to the corresponding script in
-   `production/`, increment its `@version`, and restore its production name and
-   production update/download URLs.
+   `production/`, retain the development `@version`, and restore its production
+   name and production update/download URLs.
 3. Commit and push changes to the `main` branch.
 4. In Tampermonkey, use **Check for updates** or wait for its scheduled update
    check.
