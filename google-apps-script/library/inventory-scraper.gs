@@ -246,14 +246,212 @@ function fillBlankInventoryDescriptions() {
         return;
     }
 
-    const searchUrl = properties.getProperty(INVENTORY_SCRAPER_CONFIG.searchUrlProperty);
-    if (!isInventorySearchUrl_(searchUrl)) {
-        SpreadsheetApp.getUi().alert(
-            'Set a valid inventory scraper search URL before filling descriptions.'
-        );
+    const spreadsheet = getTrackerSpreadsheet_();
+    const trackerSheet = getTrackerSheet_(spreadsheet);
+    const sheetInfo = getInventoryScraperSheetInfo_(trackerSheet);
+    const lock = getTrackerLock_();
+    if (!lock.tryLock(1000)) {
+        SpreadsheetApp.getUi().alert('Another tracker task is already running.');
         return;
     }
-    beginInventoryScrape_(searchUrl, true);
+
+    try {
+        const headerRow = sheetInfo.headerRow;
+        const lastRow = trackerSheet.getLastRow();
+        if (lastRow <= headerRow) {
+            SpreadsheetApp.getUi().alert('No vehicle rows to process.');
+            return;
+        }
+
+        const rowsToProcess = [];
+        const range = trackerSheet.getRange(headerRow + 1, 1, lastRow - headerRow, sheetInfo.lastColumn);
+        const values = range.getDisplayValues();
+        const richText = range.getRichTextValues();
+
+        for (let rowIndex = 0; rowIndex < values.length; rowIndex++) {
+            const row = values[rowIndex];
+            const description = String(row[sheetInfo.descriptionColumn - 1] || '').trim();
+            const formula = trackerSheet.getRange(headerRow + 1 + rowIndex, sheetInfo.descriptionColumn).getFormula();
+            const url = String(
+                richText[rowIndex][sheetInfo.urlColumn - 1]?.getLinkUrl() ||
+                row[sheetInfo.urlColumn - 1] || ''
+            ).trim();
+
+            if (!description && !formula && url) {
+                rowsToProcess.push({
+                    rowNumber: headerRow + 1 + rowIndex,
+                    row,
+                    url
+                });
+            }
+        }
+
+        if (!rowsToProcess.length) {
+            SpreadsheetApp.getUi().alert('All vehicle rows already have descriptions.');
+            return;
+        }
+
+        properties.setProperty(INVENTORY_SCRAPER_CONFIG.stateProperty, JSON.stringify({
+            spreadsheetId: spreadsheet.getId(),
+            sheetId: trackerSheet.getSheetId(),
+            headerRow,
+            mode: 'fillBlanks',
+            rowsToProcess,
+            processedCount: 0,
+            errorCount: 0,
+            startTime: Date.now()
+        }));
+
+        processBlankDescriptions_();
+    } finally {
+        lock.releaseLock();
+    }
+}
+
+function processBlankDescriptions_() {
+    requireSalespersonSettings_();
+    const properties = getTrackerProperties_();
+    const lock = getTrackerLock_();
+    if (!lock.tryLock(1000)) {
+        scheduleInventoryScrapeContinuation_();
+        return;
+    }
+
+    let state;
+    let spreadsheet;
+    try {
+        const savedState = properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
+        if (!savedState) return;
+
+        state = JSON.parse(savedState);
+        if (state.mode !== 'fillBlanks') {
+            lock.releaseLock();
+            processInventoryScrape_();
+            return;
+        }
+
+        const trackerSpreadsheet = getTrackerSpreadsheet_();
+        spreadsheet = SpreadsheetApp.openById(state.spreadsheetId);
+        const trackerSheet = spreadsheet.getSheets().find(
+            sheet => String(sheet.getSheetId()) === String(state.sheetId)
+        );
+        if (!trackerSheet) throw new Error('The saved tracker tab no longer exists.');
+
+        const sheetInfo = getInventoryScraperSheetInfo_(trackerSheet);
+        const startTime = Date.now();
+        let geminiRequestCount = 0;
+        const descriptionUpdates = new Map();
+        const bodyStyleUpdates = new Map();
+
+        while (
+            state.processedCount < state.rowsToProcess.length &&
+            Date.now() - startTime < INVENTORY_SCRAPER_CONFIG.maxRunMillis
+        ) {
+            if (
+                state.processedCount > 0 &&
+                state.processedCount % INVENTORY_SCRAPER_CONFIG.progressUpdateInterval === 0
+            ) {
+                spreadsheet.toast(
+                    `Generating descriptions: ${state.processedCount}/${state.rowsToProcess.length}`,
+                    'Inventory Scraper',
+                    5
+                );
+            }
+
+            const rowData = state.rowsToProcess[state.processedCount];
+            const url = rowData.url;
+
+            try {
+                const details = fetchInventoryVehicleDetails_(url);
+                const value = header => {
+                    const idx = sheetInfo.headerIndexes.get(header);
+                    return String(rowData.row[idx] || '').trim();
+                };
+                const bodyStyle = value('bodystyle');
+                const price = parsePrice_(value('price'));
+                const vehicle = {
+                    year: value('year'),
+                    make: value('make'),
+                    model: value('model'),
+                    trim: value('trim'),
+                    mileage: value('mileage').replace(/\D/g, ''),
+                    price: price === null ? '' : String(price),
+                    stock: value('stock'),
+                    condition: value('condition') || getInventoryCondition_(url),
+                    vehicleType: value('vehicletype') || details.vehicleType,
+                    bodyStyle: details.bodyStyle !== 'Other' ? details.bodyStyle : bodyStyle || 'Other',
+                    exteriorColor: details.exteriorColor !== 'Other' ? details.exteriorColor : value('ext'),
+                    exteriorColorLong: details.exteriorColorLong || value('extlong'),
+                    interiorColor: details.interiorColor !== 'Other' ? details.interiorColor : value('int'),
+                    interiorColorLong: details.interiorColorLong || value('intlong'),
+                    fuelType: details.fuelType || value('fueltype'),
+                    transmissionType: details.transmissionType || value('transmission'),
+                    descriptionBody: details.descriptionBody
+                };
+
+                if (geminiRequestCount > 0) {
+                    Utilities.sleep(INVENTORY_SCRAPER_CONFIG.geminiRequestDelayMillis);
+                }
+                geminiRequestCount++;
+                const generated = generateInventoryCopy_(vehicle);
+                descriptionUpdates.set(rowData.rowNumber, generated.description);
+                bodyStyleUpdates.set(rowData.rowNumber, generated.bodyStyle);
+            } catch (error) {
+                state.errorCount++;
+                Logger.log(`Description generation failed for row ${rowData.rowNumber}: ${error.message}`);
+            }
+
+            state.processedCount++;
+        }
+
+        writeColumnUpdates_(trackerSheet, sheetInfo.descriptionColumn, descriptionUpdates);
+        writeColumnUpdates_(trackerSheet, sheetInfo.bodyStyleColumn, bodyStyleUpdates);
+        SpreadsheetApp.flush();
+
+        if (state.processedCount < state.rowsToProcess.length) {
+            properties.setProperty(INVENTORY_SCRAPER_CONFIG.stateProperty, JSON.stringify(state));
+            scheduleInventoryScrapeContinuation_();
+            spreadsheet.toast(
+                `Generating descriptions: ${state.processedCount}/${state.rowsToProcess.length}. Continuing shortly.`,
+                'Inventory Scraper',
+                10
+            );
+            return;
+        }
+
+        properties.deleteProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
+        clearInventoryScrapeTriggers_();
+        onOpen();
+        spreadsheet.toast(
+            `Generated ${state.processedCount} description(s); ${state.errorCount} error(s).`,
+            'Inventory Scraper',
+            10
+        );
+    } catch (error) {
+        Logger.log(`Description generation stopped: ${error.message}`);
+        if (state) {
+            state.retryCount = (state.retryCount || 0) + 1;
+            if (state.retryCount <= 3) {
+                properties.setProperty(INVENTORY_SCRAPER_CONFIG.stateProperty, JSON.stringify(state));
+                scheduleInventoryScrapeContinuation_();
+                spreadsheet?.toast(
+                    `Description generation paused (${state.retryCount}/3). Retrying shortly: ${error.message}`,
+                    'Inventory Scraper',
+                    10
+                );
+            } else {
+                properties.deleteProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
+                clearInventoryScrapeTriggers_();
+                onOpen();
+                spreadsheet?.toast(`Description generation stopped: ${error.message}`, 'Inventory Scraper', 15);
+            }
+        } else {
+            SpreadsheetApp.getActiveSpreadsheet()?.toast(`Description generation failed: ${error.message}`);
+            throw error;
+        }
+    } finally {
+        lock.releaseLock();
+    }
 }
 
 function fillSelectedInventoryDescription() {
@@ -637,6 +835,7 @@ function processInventoryScrape_() {
 
         properties.deleteProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
         clearInventoryScrapeTriggers_();
+        onOpen();
         spreadsheet.toast(
             `Inventory scrape complete. Added ${state.addedCount}; updated ${state.updatedCount}; skipped ${state.skippedCount}; errors ${state.errorCount}.`,
             'Inventory Scraper',
@@ -657,6 +856,7 @@ function processInventoryScrape_() {
             } else {
                 properties.deleteProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
                 clearInventoryScrapeTriggers_();
+                onOpen();
                 spreadsheet?.toast(`Inventory scrape stopped: ${error.message}`, 'Inventory Scraper', 15);
             }
         } else {
