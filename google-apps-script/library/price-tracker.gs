@@ -1,4 +1,4 @@
-// Version: 1.3.0
+// Version: 1.4.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -70,6 +70,7 @@ function onOpen() {
         .addSeparator()
         .addItem('Run price scan now', 'runPriceCheck')
         .addItem('Fill blank Listing IDs', 'fillBlankListingIds')
+        .addItem('Copy selected vehicle row', 'showCopyTrackerRow')
         .addSeparator()
         .addItem(
             `${inventoryApiKeyIsSet ? '✅ ' : ''}Set inventory scraper Gemini key`,
@@ -112,6 +113,111 @@ function setPriceTrackerSheet() {
     );
     spreadsheet.toast(`Using "${sheet.getName()}" as the price tracker.`);
     onOpen();
+}
+
+function showCopyTrackerRow() {
+    requireSalespersonSettings_();
+    const spreadsheet = getTrackerSpreadsheet_();
+    const trackerSheet = getTrackerSheet_(spreadsheet);
+    const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    if (activeSpreadsheet.getActiveSheet().getSheetId() !== trackerSheet.getSheetId()) {
+        throw new Error('Select a vehicle row in the configured tracker tab first.');
+    }
+    const ranges = activeSpreadsheet.getActiveRangeList()?.getRanges() || [];
+    if (ranges.length !== 1 || ranges[0].getNumRows() !== 1) {
+        throw new Error('Select exactly one vehicle row in the tracker tab.');
+    }
+    const rowNumber = ranges[0].getRow();
+    const row = readCopyTrackerRow_(trackerSheet, rowNumber);
+    trackerContext_.showDialog('copy-tracker-row', {
+        sheetId: trackerSheet.getSheetId(),
+        rowNumber,
+        identityKey: row.identityKey,
+        identityValue: row.identityValue
+    }, 560, 300, 'Copy vehicle row');
+}
+
+function getCopyTrackerRow(reference) {
+    requireSalespersonSettings_();
+    if (
+        !reference ||
+        !Number.isInteger(reference.rowNumber) ||
+        !['listingId', 'stock', 'url'].includes(reference.identityKey) ||
+        typeof reference.identityValue !== 'string' ||
+        !reference.identityValue
+    ) {
+        throw new Error('Invalid row selection. Close this dialog and select the vehicle again.');
+    }
+    const sheet = getTrackerSheet_(getTrackerSpreadsheet_());
+    if (String(sheet.getSheetId()) !== String(reference.sheetId)) {
+        throw new Error('The tracker tab changed. Close this dialog and select the vehicle again.');
+    }
+    const row = readCopyTrackerRow_(sheet, reference.rowNumber);
+    if (row.identityKey !== reference.identityKey || row.identityValue !== reference.identityValue) {
+        throw new Error('The selected row changed. Close this dialog and select the vehicle again.');
+    }
+    row.values[row.descriptionColumn - 1] = makeCopyDescription_(row.description, row.price);
+    return row.values.map(value => {
+        const text = String(value).replace(/"/g, '""');
+        return /["\t\r\n]/.test(text) ? `"${text}"` : text;
+    }).join('\t');
+}
+
+function readCopyTrackerRow_(sheet, rowNumber) {
+    const columns = getTrackerColumns_(sheet);
+    if (!columns.description) throw new Error('Add a Description header to the tracker tab first.');
+    if (rowNumber <= columns.headerRow || rowNumber > sheet.getLastRow()) {
+        throw new Error('Select a vehicle row below the tracker headers.');
+    }
+    const lastColumn = sheet.getLastColumn();
+    const headers = sheet.getRange(columns.headerRow, 1, 1, lastColumn).getDisplayValues()[0];
+    const range = sheet.getRange(rowNumber, 1, 1, lastColumn);
+    const values = range.getDisplayValues()[0];
+    const richText = range.getRichTextValues()[0];
+    headers.forEach((header, index) => {
+        if (['url', 'listedon'].includes(normalizeHeader_(header))) {
+            values[index] = richText[index]?.getLinkUrl() || values[index];
+        }
+    });
+    const listingIdColumn = headers.findIndex(header => normalizeHeader_(header) === 'listingid');
+    const identities = [
+        ['listingId', listingIdColumn >= 0 ? values[listingIdColumn] : ''],
+        ['stock', values[columns.stock - 1]],
+        ['url', values[columns.url - 1]]
+    ];
+    const identity = identities.find(([, value]) => String(value || '').trim());
+    if (!identity) throw new Error('The selected row needs a Listing ID, stock number, or URL.');
+    const description = String(values[columns.description - 1] || '').trim();
+    if (!description) throw new Error('The selected vehicle has no description to copy.');
+    const price = parsePrice_(values[columns.price - 1]);
+    if (price === null || price <= 0) {
+        throw new Error('The selected vehicle needs a valid price before it can be copied.');
+    }
+    return {
+        values,
+        description,
+        descriptionColumn: columns.description,
+        price,
+        identityKey: identity[0],
+        identityValue: String(identity[1]).trim()
+    };
+}
+
+function makeCopyDescription_(description, price) {
+    const updated = updateInventoryDescriptionPrice_(description, price);
+    const priceLines = description.match(/^Price[ \t]*:[^\r\n]*$/gim) || [];
+    if (priceLines.length > 1 || (priceLines.length && updated === null)) {
+        throw new Error('The description has an unrecognized or duplicate price line. Remove it before copying.');
+    }
+    if (updated !== null) return updated;
+    const priceLine = `Price: $${price} plus tax and licensing.`;
+    const contact = /(^|\r?\n)(For more information or to schedule a test drive, contact us at:)/i;
+    if (contact.test(description)) {
+        return description.replace(contact, (match, lineBreak, heading) =>
+            `${lineBreak}${priceLine}\n.\n${heading}`
+        );
+    }
+    return `${description}\n\n${priceLine}`;
 }
 
 function installDailyPriceCheck() {

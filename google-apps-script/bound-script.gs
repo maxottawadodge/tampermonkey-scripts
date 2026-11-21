@@ -1,4 +1,4 @@
-// Version: 1.0.0
+// Version: 1.1.0
 function invokeTracker_(action, ...args) {
     return InventoryTracker.invoke(action, {
         properties: PropertiesService.getScriptProperties(),
@@ -32,6 +32,8 @@ function onOpen() { invokeTracker_('onOpen'); }
 function setPriceTrackerSheet() { invokeTracker_('setPriceTrackerSheet'); }
 function installDailyPriceCheck() { invokeTracker_('installDailyPriceCheck'); }
 function fillBlankListingIds() { invokeTracker_('fillBlankListingIds'); }
+function showCopyTrackerRow() { invokeTracker_('showCopyTrackerRow'); }
+function getCopyTrackerRow(reference) { return invokeTracker_('getCopyTrackerRow', reference); }
 function runPriceCheck() { invokeTracker_('runPriceCheck'); }
 function continuePriceCheck() { invokeTracker_('continuePriceCheck'); }
 function setInventoryScraperGeminiKey() { invokeTracker_('setInventoryScraperGeminiKey'); }

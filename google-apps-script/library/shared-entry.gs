@@ -1,4 +1,4 @@
-// Version: 1.0.0
+// Version: 1.1.0
 let trackerContext_;
 
 function invoke(action, context, args) {
@@ -7,6 +7,8 @@ function invoke(action, context, args) {
         setPriceTrackerSheet,
         installDailyPriceCheck,
         fillBlankListingIds,
+        showCopyTrackerRow,
+        getCopyTrackerRow,
         runPriceCheck,
         continuePriceCheck,
         setInventoryScraperGeminiKey,

@@ -60,8 +60,9 @@ editors; editing one copy does not update the others.
    the shared library project.
 2. Add the library by its script ID, select the deployed version, and set its
    identifier to `InventoryTracker`. Add the HTML files
-   [inventory-scraper-dialog.html](./google-apps-script/inventory-scraper-dialog.html)
-   and [salesperson-settings.html](./google-apps-script/salesperson-settings.html)
+   [inventory-scraper-dialog.html](./google-apps-script/inventory-scraper-dialog.html),
+   [salesperson-settings.html](./google-apps-script/salesperson-settings.html), and
+   [copy-tracker-row.html](./google-apps-script/copy-tracker-row.html)
    to the bound project using those exact names. Save.
 3. Reload the spreadsheet. Select the tracker tab, then choose **Price Tracker >
    Set active tab as tracker**.
@@ -82,8 +83,8 @@ editors; editing one copy does not update the others.
    confirmation and clears all existing descriptions in the tracker, including
    custom text and formulas. Finish any in-progress inventory scrape first.
    Changing only the personality keeps existing descriptions. Select the tracker
-   tab before saving the settings. New descriptions omit the price disclosure,
-   which must be added separately when copying. Set the search URL with
+   tab before saving the settings. New descriptions omit the price disclosure;
+   use **Copy selected vehicle row** to include it in the copied row. Set the search URL with
    **Set inventory scraper search URL**;
    the editor opens with the saved URL so you can keep or change it. **Scrape new
    inventory** uses that saved URL for manual runs; choose **Install daily
@@ -98,6 +99,13 @@ editors; editing one copy does not update the others.
    listings returned by that URL and follows every **Next page** link through
    the last page. Use separate search URLs for different inventory categories
    or filters.
+8. Select one vehicle row and choose **Price Tracker > Copy selected vehicle
+   row**, then **Copy row**. The copied tab-separated row includes a price
+   disclosure in its description; the sheet itself is unchanged. The price is
+   read from the sheet when you click **Copy row**, not fetched live from the
+   dealer. Run a price scan first if needed. A valid price, description, and
+   salesperson settings are required. If the browser blocks clipboard access,
+   press Command+C or Ctrl+C to copy the selected text shown in the dialog.
 
 For each new copy, set the tracker tab, search URL and salesperson details,
 authorize the script, and install the schedules from the intended user's
