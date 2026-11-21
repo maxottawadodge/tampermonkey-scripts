@@ -78,7 +78,12 @@ editors; editing one copy does not update the others.
    own Gemini API key. Choose **Set salesperson details** and enter the name,
    phone number and optional writing personality. The personality guides Gemini's
    tone; the name and phone number appear in newly generated descriptions.
-   Existing descriptions are not rewritten. Set the search URL with
+   Changing the name or phone, including the first time they are set, requires
+   confirmation and clears all existing descriptions in the tracker, including
+   custom text and formulas. Finish any in-progress inventory scrape first.
+   Changing only the personality keeps existing descriptions. Select the tracker
+   tab before saving the settings. New descriptions omit the price disclosure,
+   which must be added separately when copying. Set the search URL with
    **Set inventory scraper search URL**;
    the editor opens with the saved URL so you can keep or change it. **Scrape new
    inventory** uses that saved URL for manual runs; choose **Install daily
@@ -116,8 +121,8 @@ Rows with a `Status` column get `Update Price` added alongside `Listed` when
 their price changes. If a stock-number lookup confirms a vehicle is no longer
 listed, `Gone` is added to its Status if it already contains `Sold`;
 otherwise, `Review` is added. Existing status values are preserved.
-If a changed price cannot be synced to the description because its OMVIC price
-line is missing, `Review` and a `Notes:` warning are added to the Status field.
+Existing descriptions with an older OMVIC price line continue to have that line
+updated when the price changes. Descriptions without that line are left alone.
 Rows whose Status contains `Gone` are skipped during price scans.
 This monitors vehicles already in the tracker; it does not add new inventory
 rows. A blank tracker price is recorded as a baseline on the first successful

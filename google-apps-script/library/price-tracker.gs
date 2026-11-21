@@ -1,4 +1,4 @@
-// Version: 1.2.0
+// Version: 1.3.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -405,24 +405,7 @@ function processPriceCheck_(continuationOnly) {
                             description,
                             currentPrice
                         );
-                        if (updatedDescription === null) {
-                            progress.errorCount++;
-                            const warning =
-                                `Price scan warning: Stock ${stock} price was updated, but its description did not contain an OMVIC price line.`;
-                            if (columns.status) {
-                                const currentStatus = statusUpdates.get(sheetRow) ||
-                                    row[columns.status - 1];
-                                statusUpdates.set(
-                                    sheetRow,
-                                    addStatusNote_(
-                                        addStatusValue_(currentStatus, 'Review'),
-                                        warning
-                                    )
-                                );
-                            } else {
-                                Logger.log(warning);
-                            }
-                        } else if (updatedDescription !== description) {
+                        if (updatedDescription !== null && updatedDescription !== description) {
                             descriptionUpdates.set(sheetRow, updatedDescription);
                         }
                     }
@@ -646,14 +629,6 @@ function addStatusValue_(currentValue, valueToAdd) {
         return statuses.join(', ');
     }
     return [...statuses, valueToAdd].join(', ');
-}
-
-function addStatusNote_(currentValue, note) {
-    const formattedNote = `Notes: ${note}`;
-    const status = String(currentValue || '').trim();
-    return status.includes(formattedNote)
-        ? status
-        : [status, formattedNote].filter(Boolean).join(', ');
 }
 
 function getHistorySheet_(spreadsheet) {
