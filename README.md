@@ -31,15 +31,38 @@ unavailable, enter them manually or leave the field blank for no kilometre filte
 
 ## Scheduled price tracking
 
-The Google Apps Script in [google-apps-script/price-tracker.gs](./google-apps-script/price-tracker.gs)
+The shared Apps Script library in [google-apps-script/library/](./google-apps-script/library/)
 checks each vehicle URL in the selected tracker tab, updates its `Price` cell,
-and appends price changes to a `Price History` tab.
+and appends price changes to a `Price History` tab. Each spreadsheet has a
+small bound script and its own tracker, progress, triggers, and salesperson
+details. The Gemini key is saved in the current user's properties.
 
-1. Open the tracker spreadsheet and choose **Extensions > Apps Script**.
-2. Replace the editor contents with `google-apps-script/price-tracker.gs`. Add
-   `inventory-scraper.gs` using `google-apps-script/inventory-scraper.gs` and
-   an HTML file named `inventory-scraper-dialog.html` using
-   `google-apps-script/inventory-scraper-dialog.html`, then save the project.
+### Create the shared library
+
+1. Create a standalone Apps Script project. Add the three `.gs` files from
+   `google-apps-script/library/` to it and save.
+2. Create a versioned deployment and copy the script ID from **Project Settings**.
+   Share the library project with at least view access for each user. Library
+   viewers can read its code, so do not put API keys in the project.
+
+### Set up each spreadsheet
+
+Use a clean template when making copies: copied spreadsheet cells include any
+existing statuses and descriptions. Share each copy only with its intended
+editors; editing one copy does not update the others.
+
+1. Open the spreadsheet and choose **Extensions > Apps Script**. For an existing
+   tracker, finish any in-progress scans first. Replace the old bound
+   `price-tracker.gs` and `inventory-scraper.gs` code with the contents of
+   [bound-script.gs](./google-apps-script/bound-script.gs), and remove the old
+   duplicate functions from that project. Keeping the same bound project keeps
+   its existing settings and installed triggers. Do not remove the files from
+   the shared library project.
+2. Add the library by its script ID, select the deployed version, and set its
+   identifier to `InventoryTracker`. Add the HTML files
+   [inventory-scraper-dialog.html](./google-apps-script/inventory-scraper-dialog.html)
+   and [salesperson-settings.html](./google-apps-script/salesperson-settings.html)
+   to the bound project using those exact names. Save.
 3. Reload the spreadsheet. Select the tracker tab, then choose **Price Tracker >
    Set active tab as tracker**.
 4. Choose **Price Tracker > Run price scan now** and approve the requested
@@ -52,7 +75,11 @@ and appends price changes to a `Price History` tab.
    cells from each row's URL. IDs in the URL are extracted directly; pages are
    fetched only when the URL does not contain a listing ID.
 7. Choose **Price Tracker > Set inventory scraper Gemini key** and enter your
-   Gemini API key. Set the search URL with **Set inventory scraper search URL**;
+   own Gemini API key. Choose **Set salesperson details** and enter the name,
+   phone number and optional writing personality. The personality guides Gemini's
+   tone; the name and phone number appear in newly generated descriptions.
+   Existing descriptions are not rewritten. Set the search URL with
+   **Set inventory scraper search URL**;
    the editor opens with the saved URL so you can keep or change it. **Scrape new
    inventory** uses that saved URL for manual runs; choose **Install daily
    inventory scrape (8 AM)** to schedule it. New vehicles are appended by
@@ -66,6 +93,18 @@ and appends price changes to a `Price History` tab.
    listings returned by that URL and follows every **Next page** link through
    the last page. Use separate search URLs for different inventory categories
    or filters.
+
+For each new copy, set the tracker tab, search URL and salesperson details,
+authorize the script, and install the schedules from the intended user's
+account. Scheduled and continuation triggers run as the account that created
+them and use that account's Gemini key. Do not have multiple users install
+the same schedules in one copy. Settings and API keys should be checked after
+copying rather than assumed to have carried over.
+
+To update shared logic, edit the library project and publish a new version.
+Each bound project must select that version in its library settings; copies do
+not automatically switch versions. Bound-script or HTML changes must also be
+copied into each bound project. Test updates on a separate spreadsheet first.
 
 The tracker tab must have a header row containing `Stock`, `URL`, and `Price`.
 Add a `Listing ID` header to use **Fill blank Listing IDs**.

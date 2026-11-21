@@ -1,4 +1,4 @@
-// Version: 1.1.9
+// Version: 1.2.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -23,7 +23,7 @@ const PRICE_TRACKER_CONFIG = Object.freeze({
 });
 
 function onOpen() {
-    const scriptProperties = PropertiesService.getScriptProperties();
+    const scriptProperties = getTrackerProperties_();
     const userProperties = PropertiesService.getUserProperties();
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const activeSheet = spreadsheet.getActiveSheet();
@@ -37,13 +37,11 @@ function onOpen() {
         INVENTORY_SCRAPER_CONFIG.scheduleEnabledProperty
     ) === 'true';
     try {
-        const triggers = ScriptApp.getProjectTriggers();
-        priceScansAreEnabled = triggers.filter(trigger =>
-            trigger.getHandlerFunction() === PRICE_TRACKER_CONFIG.dailyHandler
+        const triggers = trackerContext_.triggerNames();
+        priceScansAreEnabled = triggers.filter(name =>
+            name === PRICE_TRACKER_CONFIG.dailyHandler
         ).length >= PRICE_TRACKER_CONFIG.scanHours.length;
-        inventoryScansAreEnabled = triggers.some(trigger =>
-            trigger.getHandlerFunction() === INVENTORY_SCRAPER_CONFIG.dailyHandler
-        );
+        inventoryScansAreEnabled = triggers.includes(INVENTORY_SCRAPER_CONFIG.dailyHandler);
     } catch (error) {
         Logger.log(`Could not inspect installed scan triggers: ${error.message}`);
     }
@@ -77,6 +75,7 @@ function onOpen() {
             `${inventoryApiKeyIsSet ? '✅ ' : ''}Set inventory scraper Gemini key`,
             'setInventoryScraperGeminiKey'
         )
+        .addItem('Set salesperson details', 'setSalespersonSettings')
         .addItem(
             `${inventorySearchUrlIsSet ? '✅ ' : ''}Set inventory scraper search URL`,
             'setInventoryScraperSearchUrl'
@@ -95,7 +94,14 @@ function setPriceTrackerSheet() {
     const spreadsheet = SpreadsheetApp.getActiveSpreadsheet();
     const sheet = spreadsheet.getActiveSheet();
     getTrackerColumns_(sheet);
-    const properties = PropertiesService.getScriptProperties();
+    const properties = getTrackerProperties_();
+    const previousSpreadsheetId = properties.getProperty(PRICE_TRACKER_CONFIG.spreadsheetIdProperty);
+    if (previousSpreadsheetId && previousSpreadsheetId !== spreadsheet.getId()) {
+        properties.deleteProperty(PRICE_TRACKER_CONFIG.progressProperty);
+        properties.deleteProperty(INVENTORY_SCRAPER_CONFIG.stateProperty);
+        trackerContext_.clearTriggers(PRICE_TRACKER_CONFIG.continuationHandler);
+        trackerContext_.clearTriggers(INVENTORY_SCRAPER_CONFIG.continuationHandler);
+    }
     properties.setProperty(
         PRICE_TRACKER_CONFIG.trackerSheetIdProperty,
         String(sheet.getSheetId())
@@ -113,22 +119,13 @@ function installDailyPriceCheck() {
     const trackerSheet = getTrackerSheet_(spreadsheet);
     getTrackerColumns_(trackerSheet);
 
-    const properties = PropertiesService.getScriptProperties();
+    const properties = getTrackerProperties_();
     properties.deleteProperty(PRICE_TRACKER_CONFIG.scheduleEnabledProperty);
-    ScriptApp.getProjectTriggers()
-        .filter(trigger =>
-            trigger.getHandlerFunction() === PRICE_TRACKER_CONFIG.dailyHandler
-        )
-        .forEach(trigger => ScriptApp.deleteTrigger(trigger));
-
-    PRICE_TRACKER_CONFIG.scanHours.forEach(hour => {
-        ScriptApp.newTrigger(PRICE_TRACKER_CONFIG.dailyHandler)
-            .timeBased()
-            .everyDays(1)
-            .atHour(hour)
-            .inTimezone(Session.getScriptTimeZone())
-            .create();
-    });
+    trackerContext_.clearTriggers(PRICE_TRACKER_CONFIG.dailyHandler);
+    trackerContext_.installDailyTriggers(
+        PRICE_TRACKER_CONFIG.dailyHandler,
+        PRICE_TRACKER_CONFIG.scanHours
+    );
     properties.setProperty(PRICE_TRACKER_CONFIG.scheduleEnabledProperty, 'true');
 
     spreadsheet.toast(
@@ -138,7 +135,7 @@ function installDailyPriceCheck() {
 }
 
 function fillBlankListingIds() {
-    const lock = LockService.getScriptLock();
+    const lock = getTrackerLock_();
     if (!lock.tryLock(1000)) {
         throw new Error('Another price tracker task is already running.');
     }
@@ -265,16 +262,19 @@ function continuePriceCheck() {
 }
 
 function processPriceCheck_(continuationOnly) {
-    const lock = LockService.getScriptLock();
+    const lock = getTrackerLock_();
     if (!lock.tryLock(1000)) {
         throw new Error('A price scan is already running.');
     }
 
     try {
         const startedAt = Date.now();
-        const properties = PropertiesService.getScriptProperties();
+        const properties = getTrackerProperties_();
         const savedProgress = properties.getProperty(PRICE_TRACKER_CONFIG.progressProperty);
         let progress = savedProgress ? JSON.parse(savedProgress) : null;
+        if (progress && progress.spreadsheetId !== getTrackerSpreadsheet_().getId()) {
+            throw new Error('Saved price scan belongs to a different spreadsheet. Set the tracker tab again.');
+        }
         if (!progress) {
             if (continuationOnly) return;
 
@@ -521,18 +521,14 @@ function showPriceCheckProgress_(spreadsheet, progress) {
 
 function schedulePriceCheckContinuation_() {
     clearPriceCheckContinuationTriggers_();
-    ScriptApp.newTrigger(PRICE_TRACKER_CONFIG.continuationHandler)
-        .timeBased()
-        .after(PRICE_TRACKER_CONFIG.continuationDelayMillis)
-        .create();
+    trackerContext_.scheduleContinuation(
+        PRICE_TRACKER_CONFIG.continuationHandler,
+        PRICE_TRACKER_CONFIG.continuationDelayMillis
+    );
 }
 
 function clearPriceCheckContinuationTriggers_() {
-    ScriptApp.getProjectTriggers()
-        .filter(trigger =>
-            trigger.getHandlerFunction() === PRICE_TRACKER_CONFIG.continuationHandler
-        )
-        .forEach(trigger => ScriptApp.deleteTrigger(trigger));
+    trackerContext_.clearTriggers(PRICE_TRACKER_CONFIG.continuationHandler);
 }
 
 function writeColumnUpdates_(sheet, column, updates) {
@@ -558,7 +554,7 @@ function writeColumnUpdates_(sheet, column, updates) {
 }
 
 function getTrackerSheet_(spreadsheet) {
-    const sheetId = PropertiesService.getScriptProperties().getProperty(
+    const sheetId = getTrackerProperties_().getProperty(
         PRICE_TRACKER_CONFIG.trackerSheetIdProperty
     );
     if (!sheetId) {
@@ -576,13 +572,17 @@ function getTrackerSheet_(spreadsheet) {
 }
 
 function getTrackerSpreadsheet_() {
-    const spreadsheetId = PropertiesService.getScriptProperties().getProperty(
+    const spreadsheetId = getTrackerProperties_().getProperty(
         PRICE_TRACKER_CONFIG.spreadsheetIdProperty
     );
     if (!spreadsheetId) {
         throw new Error(
             'Choose the tracker tab, then use Price Tracker > Set active tab as tracker.'
         );
+    }
+    const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
+    if (activeSpreadsheet && activeSpreadsheet.getId() !== spreadsheetId) {
+        throw new Error('This tracker belongs to another spreadsheet. Set the active tab as tracker first.');
     }
     return SpreadsheetApp.openById(spreadsheetId);
 }

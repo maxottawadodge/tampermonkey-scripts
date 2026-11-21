@@ -1,0 +1,71 @@
+<!-- Version: 1.0.0 -->
+<!DOCTYPE html>
+<html>
+<head>
+    <base target="_top">
+    <style>
+        body { margin: 0; padding: 18px; color: #202124; font: 13px Arial, sans-serif; }
+        label { display: block; margin: 0 0 5px; font-weight: 600; }
+        input, textarea {
+            box-sizing: border-box;
+            width: 100%;
+            margin-bottom: 12px;
+            padding: 8px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            font: inherit;
+        }
+        textarea { resize: vertical; }
+        #status { min-height: 18px; color: #b3261e; }
+        .actions { display: flex; justify-content: flex-end; gap: 8px; }
+        button {
+            padding: 8px 14px;
+            border: 1px solid #dadce0;
+            border-radius: 4px;
+            background: #fff;
+            color: #202124;
+            cursor: pointer;
+        }
+        button[type="submit"] { border-color: #1a73e8; background: #1a73e8; color: #fff; }
+        button:disabled { cursor: wait; opacity: .65; }
+    </style>
+</head>
+<body>
+    <form id="settings-form">
+        <label for="name">Salesperson name</label>
+        <input id="name" required value="<?= name ?>">
+        <label for="phone">Phone number</label>
+        <input id="phone" type="tel" required value="<?= phone ?>">
+        <label for="personality">Writing personality (optional)</label>
+        <textarea id="personality" rows="3" placeholder="For example: friendly, enthusiastic, and straightforward"><?= personality ?></textarea>
+        <div id="status" role="status" aria-live="polite"></div>
+        <div class="actions">
+            <button type="button" id="cancel-button">Cancel</button>
+            <button type="submit" id="save-button">Save</button>
+        </div>
+    </form>
+    <script>
+        const form = document.getElementById('settings-form');
+        const status = document.getElementById('status');
+        const saveButton = document.getElementById('save-button');
+
+        document.getElementById('cancel-button').addEventListener('click', () => google.script.host.close());
+        form.addEventListener('submit', event => {
+            event.preventDefault();
+            saveButton.disabled = true;
+            status.textContent = 'Saving...';
+            google.script.run
+                .withSuccessHandler(() => google.script.host.close())
+                .withFailureHandler(error => {
+                    status.textContent = error.message || 'Could not save salesperson details.';
+                    saveButton.disabled = false;
+                })
+                .saveSalespersonSettings({
+                    name: document.getElementById('name').value,
+                    phone: document.getElementById('phone').value,
+                    personality: document.getElementById('personality').value
+                });
+        });
+    </script>
+</body>
+</html>
