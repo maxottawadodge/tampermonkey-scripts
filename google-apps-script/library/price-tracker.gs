@@ -1,4 +1,4 @@
-// Version: 1.4.0
+// Version: 1.5.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -56,9 +56,20 @@ function onOpen() {
     const inventorySearchUrlIsSet = Boolean(
         inventorySearchUrl && isInventorySearchUrl_(inventorySearchUrl)
     );
+    const salesperson = getSalespersonSettings_();
+    const salespersonIsSet = Boolean(salesperson.name && salesperson.phone);
 
     SpreadsheetApp.getUi()
         .createMenu('Price Tracker')
+        .addItem('Copy selected vehicle row', 'showCopyTrackerRow')
+        .addItem('Fill blank inventory descriptions', 'fillBlankInventoryDescriptions')
+        .addItem('Fill selected row description', 'fillSelectedInventoryDescription')
+        .addSeparator()
+        .addItem('Run price scan now', 'runPriceCheck')
+        .addItem('Fill blank Listing IDs', 'fillBlankListingIds')
+        .addItem('Scrape new inventory', 'startInventoryScrape')
+        .addItem('Resume inventory scrape', 'continueInventoryScrape')
+        .addSeparator()
         .addItem(
             `${trackerTabIsSet ? '✅ ' : ''}Set active tab as tracker`,
             'setPriceTrackerSheet'
@@ -67,27 +78,22 @@ function onOpen() {
             `${priceScansAreEnabled ? '✅ ' : ''}Install scans (8 AM-8 PM, every 2 hours)`,
             'installDailyPriceCheck'
         )
-        .addSeparator()
-        .addItem('Run price scan now', 'runPriceCheck')
-        .addItem('Fill blank Listing IDs', 'fillBlankListingIds')
-        .addItem('Copy selected vehicle row', 'showCopyTrackerRow')
-        .addSeparator()
         .addItem(
             `${inventoryApiKeyIsSet ? '✅ ' : ''}Set inventory scraper Gemini key`,
             'setInventoryScraperGeminiKey'
         )
-        .addItem('Set salesperson details', 'setSalespersonSettings')
+        .addItem(
+            `${salespersonIsSet ? '✅ ' : ''}Set salesperson details`,
+            'setSalespersonSettings'
+        )
         .addItem(
             `${inventorySearchUrlIsSet ? '✅ ' : ''}Set inventory scraper search URL`,
             'setInventoryScraperSearchUrl'
         )
-        .addItem('Scrape new inventory', 'startInventoryScrape')
-        .addItem('Fill blank inventory descriptions', 'fillBlankInventoryDescriptions')
         .addItem(
             `${inventoryScansAreEnabled ? '✅ ' : ''}Install daily inventory scrape (8 AM)`,
             'installDailyInventoryScrape'
         )
-        .addItem('Resume inventory scrape', 'continueInventoryScrape')
         .addToUi();
 }
 
@@ -115,8 +121,7 @@ function setPriceTrackerSheet() {
     onOpen();
 }
 
-function showCopyTrackerRow() {
-    requireSalespersonSettings_();
+function getSelectedTrackerRow_() {
     const spreadsheet = getTrackerSpreadsheet_();
     const trackerSheet = getTrackerSheet_(spreadsheet);
     const activeSpreadsheet = SpreadsheetApp.getActiveSpreadsheet();
@@ -127,7 +132,12 @@ function showCopyTrackerRow() {
     if (ranges.length !== 1 || ranges[0].getNumRows() !== 1) {
         throw new Error('Select exactly one vehicle row in the tracker tab.');
     }
-    const rowNumber = ranges[0].getRow();
+    return { spreadsheet, trackerSheet, rowNumber: ranges[0].getRow() };
+}
+
+function showCopyTrackerRow() {
+    requireSalespersonSettings_();
+    const { trackerSheet, rowNumber } = getSelectedTrackerRow_();
     const row = readCopyTrackerRow_(trackerSheet, rowNumber);
     trackerContext_.showDialog('copy-tracker-row', {
         sheetId: trackerSheet.getSheetId(),

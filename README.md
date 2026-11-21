@@ -98,7 +98,12 @@ editors; editing one copy does not update the others.
    this does not append new vehicles. The script processes the
    listings returned by that URL and follows every **Next page** link through
    the last page. Use separate search URLs for different inventory categories
-   or filters.
+   or filters. To fill only one blank description, select any cell in its row
+   and choose **Fill selected row description**. This uses the row's Ottawa
+   Chrysler vehicle URL directly, even without a saved search URL. The URL must
+   contain a listing ID and match the Listing ID cell if it is populated. It
+   does not replace an existing description or formula, and only updates the
+   Description cell.
 8. Select one vehicle row and choose **Price Tracker > Copy selected vehicle
    row**, then **Copy row**. The copied tab-separated row includes a price
    disclosure in its description; the sheet itself is unchanged. The price is

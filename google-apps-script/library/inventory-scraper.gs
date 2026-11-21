@@ -1,4 +1,4 @@
-// Version: 1.2.0
+// Version: 1.3.0
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -160,6 +160,7 @@ function saveSalespersonSettings(settings) {
     } finally {
         lock.releaseLock();
     }
+    onOpen();
 }
 
 function installDailyInventoryScrape() {
@@ -247,6 +248,94 @@ function fillBlankInventoryDescriptions() {
         return;
     }
     beginInventoryScrape_(searchUrl, true);
+}
+
+function fillSelectedInventoryDescription() {
+    requireSalespersonSettings_();
+    if (!PropertiesService.getUserProperties().getProperty(INVENTORY_SCRAPER_CONFIG.apiKeyProperty)) {
+        throw new Error('Set the inventory scraper Gemini API key from the Price Tracker menu first.');
+    }
+    const { spreadsheet, trackerSheet, rowNumber } = getSelectedTrackerRow_();
+    const lock = getTrackerLock_();
+    if (!lock.tryLock(1000)) {
+        throw new Error('Another tracker task is already running.');
+    }
+    try {
+        const properties = getTrackerProperties_();
+        if (properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty)) {
+            throw new Error('Finish the in-progress inventory scrape before filling a selected row.');
+        }
+        const sheetInfo = getInventoryScraperSheetInfo_(trackerSheet);
+        if (rowNumber <= sheetInfo.headerRow || rowNumber > trackerSheet.getLastRow()) {
+            throw new Error('Select a vehicle row below the tracker headers.');
+        }
+        const range = trackerSheet.getRange(rowNumber, 1, 1, sheetInfo.lastColumn);
+        const row = range.getDisplayValues()[0];
+        const descriptionCell = trackerSheet.getRange(rowNumber, sheetInfo.descriptionColumn);
+        if (String(row[sheetInfo.descriptionColumn - 1] || '').trim() || descriptionCell.getFormula()) {
+            throw new Error('The selected row already has a description or description formula.');
+        }
+        const url = String(
+            range.getRichTextValues()[0][sheetInfo.urlColumn - 1]?.getLinkUrl() ||
+            row[sheetInfo.urlColumn - 1] || ''
+        ).trim();
+        const urlListingId = extractListingIdFromUrl_(url);
+        if (!/^https:\/\/www\.ottawachryslerjeepdodge\.com\//i.test(url) || !urlListingId) {
+            throw new Error('The selected row needs a valid Ottawa Chrysler vehicle listing URL.');
+        }
+        const listingId = String(row[sheetInfo.listingIdColumn - 1] || '').trim();
+        if (listingId && listingId !== urlListingId) {
+            throw new Error('The selected row’s Listing ID does not match its vehicle URL.');
+        }
+        const value = header => String(row[sheetInfo.headerIndexes.get(header)] || '').trim();
+        const details = fetchInventoryVehicleDetails_(url);
+        const bodyStyle = value('bodystyle');
+        const price = parsePrice_(value('price'));
+        const vehicle = {
+            year: value('year'),
+            make: value('make'),
+            model: value('model'),
+            trim: value('trim'),
+            mileage: value('mileage').replace(/\D/g, ''),
+            price: price === null ? '' : String(price),
+            stock: value('stock'),
+            condition: value('condition') || getInventoryCondition_(url),
+            vehicleType: value('vehicletype') || details.vehicleType,
+            bodyStyle: details.bodyStyle !== 'Other' ? details.bodyStyle : bodyStyle || 'Other',
+            exteriorColor: details.exteriorColor !== 'Other' ? details.exteriorColor : value('ext'),
+            exteriorColorLong: details.exteriorColorLong || value('extlong'),
+            interiorColor: details.interiorColor !== 'Other' ? details.interiorColor : value('int'),
+            interiorColorLong: details.interiorColorLong || value('intlong'),
+            fuelType: details.fuelType || value('fueltype'),
+            transmissionType: details.transmissionType || value('transmission'),
+            descriptionBody: details.descriptionBody
+        };
+        spreadsheet.toast('Generating a description for the selected row...', 'Inventory Scraper', 5);
+        const generated = generateInventoryCopy_(vehicle);
+
+        const currentInfo = getInventoryScraperSheetInfo_(trackerSheet);
+        const currentValues = range.getDisplayValues()[0];
+        const currentUrl = String(
+            range.getRichTextValues()[0][sheetInfo.urlColumn - 1]?.getLinkUrl() ||
+            currentValues[sheetInfo.urlColumn - 1] || ''
+        ).trim();
+        if (
+            properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty) ||
+            currentInfo.headerRow !== sheetInfo.headerRow ||
+            currentInfo.lastColumn !== sheetInfo.lastColumn ||
+            currentInfo.headers.some((header, index) => header !== sheetInfo.headers[index]) ||
+            currentValues.some((value, index) => value !== row[index]) ||
+            currentUrl !== url ||
+            descriptionCell.getFormula()
+        ) {
+            throw new Error('The tracker or selected row changed while generating. No description was saved; try again.');
+        }
+        descriptionCell.setValue(generated.description);
+        SpreadsheetApp.flush();
+        spreadsheet.toast('Description filled for the selected row.', 'Inventory Scraper', 10);
+    } finally {
+        lock.releaseLock();
+    }
 }
 
 function runScheduledInventoryScrape() {
