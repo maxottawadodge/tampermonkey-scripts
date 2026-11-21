@@ -1,4 +1,4 @@
-// Version: 1.3.0
+// Version: 1.4.0
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -199,6 +199,12 @@ function installDailyInventoryScrape() {
     onOpen();
 }
 
+function startOrResumeInventoryScrape() {
+    if (!resumeInventoryScrapeIfRunning_()) {
+        startInventoryScrape();
+    }
+}
+
 function startInventoryScrape() {
     requireSalespersonSettings_();
     if (resumeInventoryScrapeIfRunning_()) return;
@@ -263,7 +269,7 @@ function fillSelectedInventoryDescription() {
     try {
         const properties = getTrackerProperties_();
         if (properties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty)) {
-            throw new Error('Finish the in-progress inventory scrape before filling a selected row.');
+            throw new Error('Finish generating descriptions before filling a selected row.');
         }
         const sheetInfo = getInventoryScraperSheetInfo_(trackerSheet);
         if (rowNumber <= sheetInfo.headerRow || rowNumber > trackerSheet.getLastRow()) {

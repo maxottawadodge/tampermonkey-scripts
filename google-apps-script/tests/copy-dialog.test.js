@@ -6,7 +6,7 @@ function assert(condition, message) {
 function setupDialog(mode) {
     const elements = {};
     for (const id of ['copy-button', 'copy-text', 'status', 'sheet-id', 'row-number',
-        'identity-key', 'identity-value', 'close-button']) {
+        'identity-key', 'identity-value', 'copied-text', 'close-button']) {
         elements[id] = {
             value: '',
             hidden: false,
@@ -23,6 +23,7 @@ function setupDialog(mode) {
     elements['row-number'].value = '2';
     elements['identity-key'].value = 'listingId';
     elements['identity-value'].value = 'LIST-1';
+    elements['copied-text'].value = '';
     let fetched = 0;
     let reference;
     let clipboardData;

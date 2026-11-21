@@ -1,4 +1,4 @@
-// Version: 1.5.0
+// Version: 1.6.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -58,17 +58,22 @@ function onOpen() {
     );
     const salesperson = getSalespersonSettings_();
     const salespersonIsSet = Boolean(salesperson.name && salesperson.phone);
+    const scrapeInProgress = Boolean(
+        scriptProperties.getProperty(INVENTORY_SCRAPER_CONFIG.stateProperty)
+    );
 
     SpreadsheetApp.getUi()
         .createMenu('Price Tracker')
         .addItem('Copy selected vehicle row', 'showCopyTrackerRow')
-        .addItem('Fill blank inventory descriptions', 'fillBlankInventoryDescriptions')
-        .addItem('Fill selected row description', 'fillSelectedInventoryDescription')
+        .addItem('Generate all blank descriptions', 'fillBlankInventoryDescriptions')
+        .addItem('Generate single description', 'fillSelectedInventoryDescription')
         .addSeparator()
         .addItem('Run price scan now', 'runPriceCheck')
         .addItem('Fill blank Listing IDs', 'fillBlankListingIds')
-        .addItem('Scrape new inventory', 'startInventoryScrape')
-        .addItem('Resume inventory scrape', 'continueInventoryScrape')
+        .addItem(
+            `${scrapeInProgress ? '🔄 ' : ''}Scrape inventory`,
+            'startOrResumeInventoryScrape'
+        )
         .addSeparator()
         .addItem(
             `${trackerTabIsSet ? '✅ ' : ''}Set active tab as tracker`,
@@ -139,11 +144,19 @@ function showCopyTrackerRow() {
     requireSalespersonSettings_();
     const { trackerSheet, rowNumber } = getSelectedTrackerRow_();
     const row = readCopyTrackerRow_(trackerSheet, rowNumber);
+    const values = [...row.values];
+    values[row.descriptionColumn - 1] = makeCopyDescription_(row.description, row.price);
+    const text = values.map(value => {
+        const str = String(value).replace(/"/g, '""');
+        return /["\t\r\n]/.test(str) ? `"${str}"` : str;
+    }).join('\t');
+
     trackerContext_.showDialog('copy-tracker-row', {
         sheetId: trackerSheet.getSheetId(),
         rowNumber,
         identityKey: row.identityKey,
-        identityValue: row.identityValue
+        identityValue: row.identityValue,
+        copiedText: text
     }, 560, 300, 'Copy vehicle row');
 }
 

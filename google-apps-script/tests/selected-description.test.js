@@ -126,7 +126,7 @@ assertThrows(() => invoke('fillSelectedInventoryDescription', context), 'descrip
 assert(writes === 1, 'Blank formula was overwritten');
 formulas[0] = '';
 properties.INVENTORY_SCRAPE_STATE = '{}';
-assertThrows(() => invoke('fillSelectedInventoryDescription', context), 'in-progress');
+assertThrows(() => invoke('fillSelectedInventoryDescription', context), 'Finish generating descriptions');
 delete properties.INVENTORY_SCRAPE_STATE;
 
 const validUrl = rows[0][col('URL')];

@@ -1,4 +1,4 @@
-// Version: 1.2.0
+// Version: 1.3.0
 load('google-apps-script/library/shared-entry.gs');
 load('google-apps-script/library/price-tracker.gs');
 load('google-apps-script/library/inventory-scraper.gs');
@@ -116,12 +116,15 @@ const original = makeContext(originalProperties);
 const copy = makeContext(copyProperties);
 
 invoke('onOpen', original);
-assert(menuItems[0].handler === 'showCopyTrackerRow' && menuItems[1].handler === 'fillBlankInventoryDescriptions', 'Primary actions are not first');
-assert(menuItems[2].handler === 'fillSelectedInventoryDescription', 'Selected-row action is missing');
+assert(menuItems[0].handler === 'showCopyTrackerRow' && menuItems[1].handler === 'fillBlankInventoryDescriptions' && menuItems[2].handler === 'fillSelectedInventoryDescription', 'Primary actions are not first');
+assert(menuItems[3].handler === 'runPriceCheck' && menuItems[4].handler === 'fillBlankListingIds' && menuItems[5].handler === 'startOrResumeInventoryScrape', 'Operational items missing or out of order');
 assert(menuItems.find(item => item.handler === 'setSalespersonSettings').caption === 'Set salesperson details', 'Empty salesperson settings were marked complete');
 const setupHandlers = ['setPriceTrackerSheet', 'installDailyPriceCheck', 'setInventoryScraperGeminiKey',
     'setSalespersonSettings', 'setInventoryScraperSearchUrl', 'installDailyInventoryScrape'];
 assert(menuItems.slice(-setupHandlers.length).map(item => item.handler).join(',') === setupHandlers.join(','), 'Setup items are not grouped at the bottom');
+assert(menuItems.find(item => item.handler === 'startOrResumeInventoryScrape').caption === 'Scrape inventory', 'Combined scrape item is missing');
+assert(!menuItems.find(item => item.handler === 'startInventoryScrape'), 'Old startInventoryScrape should not be in menu');
+assert(!menuItems.find(item => item.handler === 'continueInventoryScrape'), 'Old continueInventoryScrape should not be in menu');
 
 assertThrows(() => invoke('saveSalespersonSettings', original, [{ name: ' ', phone: '123' }]), 'name and phone');
 const initialSettings = {
@@ -252,7 +255,7 @@ globalThis.ScriptApp = {
     })
 };
 const bound = new Function(readFile('google-apps-script/bound-script.gs') +
-    '; return { saveSalespersonSettings, runScheduledInventoryScrape, fillSelectedInventoryDescription };')();
+    '; return { saveSalespersonSettings, runScheduledInventoryScrape, fillSelectedInventoryDescription, startOrResumeInventoryScrape };')();
 bound.saveSalespersonSettings({ name: 'Sam' });
 assert(captured.action === 'saveSalespersonSettings' && captured.args[0].name === 'Sam', 'Bound settings wrapper did not forward arguments');
 assert(captured.context.properties === copyProperties && captured.context.lock === copy.lock, 'Bound wrapper did not pass its own resources');
@@ -263,7 +266,7 @@ assert(installedHour === 8 && continuationDelay === 60000, 'Bound trigger schedu
 assert(captured.context.triggerNames().join(',') === 'daily,continue', 'Bound triggers were not isolated');
 bound.runScheduledInventoryScrape();
 assert(captured.action === 'runScheduledInventoryScrape', 'Scheduled wrapper did not call the library');
-bound.fillSelectedInventoryDescription();
-assert(captured.action === 'fillSelectedInventoryDescription', 'Selected-row wrapper did not call the library');
+bound.startOrResumeInventoryScrape();
+assert(captured.action === 'startOrResumeInventoryScrape', 'Combined scrape wrapper did not call the library');
 
 print('Shared library tests passed');

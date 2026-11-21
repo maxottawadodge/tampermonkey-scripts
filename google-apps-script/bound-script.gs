@@ -1,4 +1,4 @@
-// Version: 1.2.0
+// Version: 1.3.0
 function invokeTracker_(action, ...args) {
     return InventoryTracker.invoke(action, {
         properties: PropertiesService.getScriptProperties(),
@@ -45,5 +45,6 @@ function installDailyInventoryScrape() { invokeTracker_('installDailyInventorySc
 function startInventoryScrape() { invokeTracker_('startInventoryScrape'); }
 function fillBlankInventoryDescriptions() { invokeTracker_('fillBlankInventoryDescriptions'); }
 function fillSelectedInventoryDescription() { invokeTracker_('fillSelectedInventoryDescription'); }
+function startOrResumeInventoryScrape() { invokeTracker_('startOrResumeInventoryScrape'); }
 function runScheduledInventoryScrape() { invokeTracker_('runScheduledInventoryScrape'); }
 function continueInventoryScrape() { invokeTracker_('continueInventoryScrape'); }

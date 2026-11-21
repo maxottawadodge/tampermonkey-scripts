@@ -1,4 +1,4 @@
-<!-- Version: 1.0.0 -->
+<!-- Version: 1.1.0 -->
 <!DOCTYPE html>
 <html>
 <head>
@@ -19,16 +19,18 @@
     <input id="row-number" type="hidden" value="<?= rowNumber ?>">
     <input id="identity-key" type="hidden" value="<?= identityKey ?>">
     <input id="identity-value" type="hidden" value="<?= identityValue ?>">
+    <input id="copied-text" type="hidden" value="<?= copiedText || '' ?>">
     <textarea id="copy-text" aria-label="Vehicle row ready to copy" readonly hidden></textarea>
     <div id="status" role="status" aria-live="polite"></div>
     <div class="actions">
         <button type="button" id="close-button">Close</button>
-        <button type="button" id="copy-button">Copy row</button>
+        <button type="button" id="copy-button" style="display:<?= copiedText ? 'none' : 'inline-block' ?>">Copy row</button>
     </div>
     <script>
         const copyButton = document.getElementById('copy-button');
         const copyText = document.getElementById('copy-text');
         const status = document.getElementById('status');
+        const copiedText = document.getElementById('copied-text').value;
         const reference = {
             sheetId: document.getElementById('sheet-id').value,
             rowNumber: Number(document.getElementById('row-number').value),
@@ -37,12 +39,6 @@
         };
 
         document.getElementById('close-button').addEventListener('click', () => google.script.host.close());
-
-        function fetchRow() {
-            return new Promise((resolve, reject) => {
-                google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getCopyTrackerRow(reference);
-            });
-        }
 
         function copyFallback(text) {
             copyText.value = text;
@@ -60,31 +56,38 @@
                 : 'Automatic copy was blocked. Press Command+C or Ctrl+C to copy the selected row.';
         }
 
-        copyButton.addEventListener('click', async () => {
-            copyButton.disabled = true;
-            copyText.hidden = true;
-            status.textContent = 'Reading the current row...';
-            const row = fetchRow();
-            try {
-                if (typeof ClipboardItem === 'function' && navigator.clipboard?.write) {
-                    await navigator.clipboard.write([
-                        new ClipboardItem({ 'text/plain': row.then(text => new Blob([text], { type: 'text/plain' })) })
-                    ]);
-                    status.textContent = 'Copied the row with the current sheet price.';
-                } else {
-                    copyFallback(await row);
-                }
-            } catch (error) {
-                console.warn('Automatic clipboard copy unavailable:', error);
+        if (copiedText) {
+            copyFallback(copiedText);
+        } else {
+            copyButton.addEventListener('click', async () => {
+                copyButton.disabled = true;
+                copyText.hidden = true;
+                status.textContent = 'Reading the current row...';
                 try {
-                    copyFallback(await row);
-                } catch (rowError) {
-                    status.textContent = rowError.message || 'Could not read the selected vehicle row.';
+                    const row = await new Promise((resolve, reject) => {
+                        google.script.run.withSuccessHandler(resolve).withFailureHandler(reject).getCopyTrackerRow(reference);
+                    });
+                    if (typeof ClipboardItem === 'function' && navigator.clipboard?.write) {
+                        try {
+                            await navigator.clipboard.write([
+                                new ClipboardItem({ 'text/plain': new Blob([row], { type: 'text/plain' }) })
+                            ]);
+                            status.textContent = 'Copied the row with the current sheet price.';
+                        } catch (clipboardError) {
+                            console.warn('Clipboard write failed:', clipboardError);
+                            copyFallback(row);
+                        }
+                    } else {
+                        copyFallback(row);
+                    }
+                } catch (error) {
+                    console.warn('Automatic clipboard copy unavailable:', error);
+                    status.textContent = error.message || 'Could not read the selected vehicle row.';
+                } finally {
+                    copyButton.disabled = false;
                 }
-            } finally {
-                copyButton.disabled = false;
-            }
-        });
+            });
+        }
     </script>
 </body>
 </html>

@@ -1,4 +1,4 @@
-// Version: 1.2.0
+// Version: 1.3.0
 let trackerContext_;
 
 function invoke(action, context, args) {
@@ -20,6 +20,7 @@ function invoke(action, context, args) {
         startInventoryScrape,
         fillBlankInventoryDescriptions,
         fillSelectedInventoryDescription,
+        startOrResumeInventoryScrape,
         runScheduledInventoryScrape,
         continueInventoryScrape
     };
