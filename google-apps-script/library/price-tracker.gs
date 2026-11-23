@@ -1,4 +1,4 @@
-// Version: 1.6.0
+// Version: 1.7.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -463,6 +463,7 @@ function processPriceCheck_(continuationOnly) {
         const descriptionUpdates = new Map();
         const statusUpdates = new Map();
         const seenStocks = new Set(progress.seenStocks);
+        const priceNoteUpdates = new Map();
         let requestCount = 0;
 
         if (progress.nextIndex === 0) {
@@ -527,6 +528,7 @@ function processPriceCheck_(continuationOnly) {
                 ]);
                 const sheetRow = progress.headerRow + index + 1;
                 priceUpdates.set(sheetRow, currentPrice);
+                priceNoteUpdates.set(sheetRow, currentPrice);
                 if (columns.description) {
                     const description = String(row[columns.description - 1] || '');
                     if (description.trim()) {
@@ -572,6 +574,22 @@ function processPriceCheck_(continuationOnly) {
         }
 
         writeColumnUpdates_(trackerSheet, columns.price, priceUpdates);
+        
+        // Append price to cell notes for inline history
+        if (priceNoteUpdates.size > 0) {
+            const now = new Date();
+            const tz = SpreadsheetApp.getActiveSpreadsheet().getSpreadsheetTimeZone();
+            const dateStr = Utilities.formatDate(now, tz, 'MMM d, yyyy h:mm a');
+            priceNoteUpdates.forEach((price, row) => {
+                const cell = trackerSheet.getRange(row, columns.price);
+                const existingNote = cell.getNote() || '';
+                const newNote = existingNote 
+                    ? existingNote + '\n' + dateStr + ': $' + price
+                    : dateStr + ': $' + price;
+                cell.setNote(newNote);
+            });
+        }
+        
         if (columns.description) {
             writeColumnUpdates_(trackerSheet, columns.description, descriptionUpdates);
         }

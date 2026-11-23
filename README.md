@@ -33,7 +33,9 @@ unavailable, enter them manually or leave the field blank for no kilometre filte
 
 The shared Apps Script library in [google-apps-script/library/](./google-apps-script/library/)
 checks each vehicle URL in the selected tracker tab, updates its `Price` cell,
-and appends price changes to a `Price History` tab. Each spreadsheet has a
+and appends price changes to a `Price History` tab. Each price change also
+adds a timestamped entry to the price cell's note, so you can click any price
+cell to see its full price change history inline. Each spreadsheet has a
 small bound script and its own tracker, progress, triggers, and salesperson
 details. The Gemini key is saved in the current user's properties.
 
