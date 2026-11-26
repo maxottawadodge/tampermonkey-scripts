@@ -1,4 +1,4 @@
-// Version: 1.7.0
+// Version: 1.8.0
 const PRICE_TRACKER_CONFIG = Object.freeze({
     historySheetName: 'Price History',
     trackerSheetIdProperty: 'PRICE_TRACKER_SHEET_ID',
@@ -74,6 +74,7 @@ function onOpen() {
             `${scrapeInProgress ? '🔄 ' : ''}Scrape inventory`,
             'startOrResumeInventoryScrape'
         )
+        .addItem('Convert Facebook links to edit format', 'convertFacebookLinks')
         .addSeparator()
         .addItem(
             `${trackerTabIsSet ? '✅ ' : ''}Set active tab as tracker`,

@@ -1,4 +1,4 @@
-// Version: 1.5.0
+// Version: 1.6.0
 const INVENTORY_SCRAPER_CONFIG = Object.freeze({
     stateProperty: 'INVENTORY_SCRAPE_STATE',
     searchUrlProperty: 'INVENTORY_SCRAPE_SEARCH_URL',
@@ -161,6 +161,53 @@ function saveSalespersonSettings(settings) {
         lock.releaseLock();
     }
     onOpen();
+}
+
+function convertFacebookLinks() {
+    const spreadsheet = getTrackerSpreadsheet_();
+    const sheet = getTrackerSheet_(spreadsheet);
+    const columns = getTrackerColumns_(sheet);
+    
+    if (!columns.url) {
+        spreadsheet.toast('URL column not found in tracker sheet.', 'Convert Facebook Links', 5);
+        return;
+    }
+    
+    const range = sheet.getRange(columns.headerRow + 1, columns.url, sheet.getLastRow() - columns.headerRow);
+    const values = range.getValues();
+    let convertedCount = 0;
+    
+    for (let i = 0; i < values.length; i++) {
+        const url = String(values[i][0] || '').trim();
+        if (!url) continue;
+        
+        const converted = convertFacebookMarketplaceUrl_(url);
+        if (converted !== url) {
+            values[i][0] = converted;
+            convertedCount++;
+        }
+    }
+    
+    if (convertedCount > 0) {
+        range.setValues(values);
+        spreadsheet.toast(
+            `Converted ${convertedCount} Facebook link${convertedCount === 1 ? '' : 's'} to edit format.`,
+            'Convert Facebook Links',
+            5
+        );
+    } else {
+        spreadsheet.toast('No Facebook links found to convert.', 'Convert Facebook Links', 5);
+    }
+}
+
+function convertFacebookMarketplaceUrl_(url) {
+    // Convert https://www.facebook.com/marketplace/item/[ID]/ to 
+    // https://www.facebook.com/marketplace/edit/?listing_id=[ID]
+    const itemMatch = url.match(/facebook\.com\/marketplace\/item\/(\d+)/);
+    if (itemMatch) {
+        return `https://www.facebook.com/marketplace/edit/?listing_id=${itemMatch[1]}`;
+    }
+    return url;
 }
 
 function installDailyInventoryScrape() {

@@ -1,4 +1,4 @@
-// Version: 1.3.0
+// Version: 1.4.0
 let trackerContext_;
 
 function invoke(action, context, args) {
@@ -22,7 +22,8 @@ function invoke(action, context, args) {
         fillSelectedInventoryDescription,
         startOrResumeInventoryScrape,
         runScheduledInventoryScrape,
-        continueInventoryScrape
+        continueInventoryScrape,
+        convertFacebookLinks
     };
     if (!Object.prototype.hasOwnProperty.call(actions, action)) {
         throw new Error(`Unknown tracker action: ${action}`);
